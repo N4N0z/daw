@@ -1426,6 +1426,12 @@ SupportedGames[10126164619] = {
             end
         end))
 
+        AutoClickSub:AddSection("Supported Game")
+        AutoClickSub:AddParagraph({
+            Title = "\u{2705} Looksmax & Mog",
+            Text = "Game detected and supported. These cheats only appear here — other games fall back to the universal hub.",
+        })
+
         AutoClickSub:AddSection("Auto Click")
         if not HAS_FIRESIGNAL then
             AutoClickSub:AddParagraph({
@@ -1440,6 +1446,14 @@ SupportedGames[10126164619] = {
             Callback = function(v)
                 autoMog = v
                 Notify("Auto Click", "Mogging " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
+            end,
+        })
+        AutoClickSub:AddToggle({
+            Name = "Mog Auto Scan", Default = false, Flag = "ac_scan",
+            Description = "Auto-claims the ShapeTouch scan shapes during a mog battle (skips bombs)",
+            Callback = function(v)
+                autoScan = v
+                Notify("Auto Click", "Auto Scan " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
             end,
         })
         AutoClickSub:AddToggle({
