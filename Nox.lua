@@ -1462,40 +1462,48 @@ SupportedGames[10126164619] = {
             return frame and frame.Visible and frame:FindFirstChild("ClickButton")
         end
 
+        local function driveClickSpam(pg)
+            -- spam-circle minigame: instant click = Perfect
+            local mog = pg:FindFirstChild("Mogging")
+            for _, d in ipairs((mog or pg):GetDescendants()) do
+                if d.Name == "ActiveClickMinigameButton" and d:IsA("GuiButton") then
+                    fireActivated(d)
+                end
+            end
+        end
+
+        local function driveTug(pg)
+            for _, guiName in ipairs({ "Session", "Session2v2" }) do
+                local s = pg:FindFirstChild(guiName)
+                local btn = getClickBtn(s and s:FindFirstChild("TugofWarBar"))
+                if btn then
+                    for _ = 1, barClicks do fireActivated(btn) end
+                end
+            end
+        end
+
+        -- ONE entry point that solves whatever mog-battle minigame is on screen.
+        -- Each driver self-guards on its module's Running flag / element presence,
+        -- so running them all every frame is safe and covers every situation.
+        local function solveMogBattle(pg)
+            driveClickSpam(pg)   -- spam circles
+            driveQTE()           -- osu timing circles
+            driveShapeTouch()    -- scan shapes (skips bombs)
+            driveMusic()         -- osu-mania A/S/D lanes
+            driveArrow()         -- sweeping arrow / green zone
+            driveTug(pg)         -- tug of war bar
+        end
+
         track(RunService.Heartbeat:Connect(function()
             if HUB.dead then return end
             local pg = LocalPlayer:FindFirstChild("PlayerGui")
             if not pg then return end
 
-            -- safety net for any Mogging circle the DescendantAdded hook missed
-            if autoMog then
-                local mog = pg:FindFirstChild("Mogging")
-                for _, d in ipairs((mog or pg):GetDescendants()) do
-                    if d.Name == "ActiveClickMinigameButton" and d:IsA("GuiButton") then
-                        fireActivated(d)   -- spam circle: instant click = Perfect
-                    end
-                end
-                driveQTE()   -- osu-timing circle: only fires inside the Perfect window
-            end
+            if autoMog then solveMogBattle(pg) end   -- every mog-battle minigame
 
             if autoGym then
                 driveGymClick()   -- Bench Press, Squat (+ golden variants)
                 driveGymDrag()    -- Lat Pulldown, Curl (+ golden variants)
-            end
-
-            if autoScan then
-                driveShapeTouch() -- ShapeTouch "scan" shapes (bombs skipped)
-            end
-
-            if autoTug then
-                for _, guiName in ipairs({ "Session", "Session2v2" }) do
-                    local s = pg:FindFirstChild(guiName)
-                    local bar = s and s:FindFirstChild("TugofWarBar")
-                    local btn = getClickBtn(bar)
-                    if btn then
-                        for _ = 1, barClicks do fireActivated(btn) end
-                    end
-                end
             end
         end))
 
