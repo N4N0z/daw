@@ -1321,6 +1321,35 @@ SupportedGames[10126164619] = {
             end
         end
 
+        -- ShapeTouch ("scan") minigame singleton. Shapes are 3D models tracked
+        -- in .Animations; each has ShapeKind/BattleId attributes. Claiming a
+        -- non-bomb shape via PlayShapeClickFeedback scores it instantly.
+        local ShapeTouch
+        do
+            local ok, mod = pcall(function()
+                return LocalPlayer.PlayerScripts.Client.UI.Mogging.MoggingShapeTouchClient
+            end)
+            if ok and mod then
+                pcall(function() ShapeTouch = require(mod) end)
+            end
+        end
+
+        local function driveShapeTouch()
+            if not ShapeTouch or ShapeTouch.Running ~= true then return end
+            local battleId = ShapeTouch.ActiveBattleId
+            local anims    = ShapeTouch.Animations
+            local clicked  = ShapeTouch.ClickedModels
+            if type(anims) ~= "table" then return end
+            for model in pairs(anims) do
+                if typeof(model) == "Instance" and model.Parent ~= nil
+                    and (type(clicked) ~= "table" or clicked[model] ~= true)
+                    and model:GetAttribute("ShapeKind") ~= "Bomb"           -- never touch bombs
+                    and model:GetAttribute("BattleId") == battleId then
+                    pcall(function() ShapeTouch:PlayShapeClickFeedback(model) end)
+                end
+            end
+        end
+
         local function driveGymClick()
             -- Bench Press / Squat: fill the bar and bank a Perfect rep each cooldown.
             if GymClick and GymClick.Running == true and GymClick.Reversing ~= true then
@@ -1379,6 +1408,10 @@ SupportedGames[10126164619] = {
             if autoGym then
                 driveGymClick()   -- Bench Press, Squat (+ golden variants)
                 driveGymDrag()    -- Lat Pulldown, Curl (+ golden variants)
+            end
+
+            if autoScan then
+                driveShapeTouch() -- ShapeTouch "scan" shapes (bombs skipped)
             end
 
             if autoTug then
