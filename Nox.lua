@@ -1295,6 +1295,7 @@ SupportedGames[10126164619] = {
         local AutoClickSub = GameTab:AddSubTab("Auto Click")
 
         local autoMog   = false   -- click the spawning "CLICK" circles instantly
+        local autoScan  = false   -- claim the ShapeTouch "scan" shapes (skips bombs)
         local autoGym   = false   -- auto-complete EVERY gym exercise (click + drag)
         local autoTug   = false   -- auto-spam the tug-of-war bar
         local barClicks = 25      -- Activated fires per frame for bar-type minigames
