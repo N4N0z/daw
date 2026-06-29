@@ -1473,7 +1473,7 @@ SupportedGames[10126164619] = {
 
         AutoClickSub:AddToggle({
             Name = "Mogging Auto Click", Default = false, Flag = "ac_mog",
-            Description = "Clicks circles instantly",
+            Description = "Spam circles + timed osu circles",
             Callback = function(v)
                 autoMog = v
                 Notify("Auto Click", "Mogging " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
