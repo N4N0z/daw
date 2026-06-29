@@ -1273,10 +1273,13 @@ AimSub:AddColorPicker({
 })
 
 -- ════════════════════════════════════════════════════════════════════════════
--- GAME: Looksmax & Mog — Auto Click minigames (Mogging circles / Gym / TugofWar)
+-- GAME SUPPORT FRAMEWORK
+-- The universal tabs above load in every game. Each entry in SupportedGames is
+-- keyed by universe GameId; if the current game matches, its Build() runs and
+-- adds a dedicated tab with that game's features. Unsupported games simply run
+-- the universal hub. To support a new game, add another SupportedGames[id].
 -- ════════════════════════════════════════════════════════════════════════════
-local GameTab = Window:AddTab({ Name = "Game", Subtitle = "Looksmax & Mog", Icon = "gamepad" })
-local AutoClickSub = GameTab:AddSubTab("Auto Click")
+local SupportedGames = {}
 
 -- executor signal-fire (different executors expose it under different names)
 local fireSignal = firesignal
@@ -1284,143 +1287,166 @@ local fireSignal = firesignal
     or replicatesignal
 local HAS_FIRESIGNAL = type(fireSignal) == "function"
 
-local autoMog   = false   -- click the spawning "CLICK" circles instantly
-local autoGym   = false   -- auto-complete EVERY gym exercise (click bar + drag bar)
-local autoTug   = false   -- auto-spam the tug-of-war bar
-local barClicks = 25      -- Activated fires per frame for bar-type minigames
+-- ─── Looksmax & Mog  (universe 10126164619) ─────────────────────────────────
+SupportedGames[10126164619] = {
+    Name = "Looksmax & Mog",
+    Build = function()
+        local GameTab = Window:AddTab({ Name = "Game", Subtitle = "Looksmax & Mog", Icon = "gamepad" })
+        local AutoClickSub = GameTab:AddSubTab("Auto Click")
 
-local function fireActivated(btn)
-    if btn and HAS_FIRESIGNAL then
-        pcall(fireSignal, btn.Activated)
-    end
-end
+        local autoMog   = false   -- click the spawning "CLICK" circles instantly
+        local autoGym   = false   -- auto-complete EVERY gym exercise (click + drag)
+        local autoTug   = false   -- auto-spam the tug-of-war bar
+        local barClicks = 25      -- Activated fires per frame for bar-type minigames
 
--- The gym uses two minigame singletons (require returns the live tables the
--- game itself drives). One handles Bench/Squat (ClickBar), the other handles
--- LatPulldown/Curl (DragBar). Driving them directly = one toggle does ALL
--- exercises with Perfect form, regardless of which machine you're on.
-local GymClick, GymDrag
-do
-    local ok, base = pcall(function()
-        return LocalPlayer.PlayerScripts.Client.Controllers.Gym
-    end)
-    if ok and base then
-        pcall(function() GymClick = require(base.GymClickBarMinigame) end)
-        pcall(function() GymDrag  = require(base.GymDragBarMinigame) end)
-    end
-end
-
-local function driveGymClick()
-    -- Bench Press / Squat: fill the bar and bank a Perfect rep each cooldown.
-    if GymClick and GymClick.Running == true and GymClick.Reversing ~= true then
-        GymClick.ActiveRepStarted   = true
-        GymClick.ActiveRepStartedAt = os.clock()   -- ~0 elapsed => Perfect form
-        GymClick.Fill               = 1
-        pcall(function() GymClick:CompleteRep() end)
-    end
-end
-
-local function driveGymDrag()
-    -- Lat Pulldown / Curl: feign a drag to the endpoint; the game's own Step
-    -- loop then flips to the release phase and banks the rep automatically.
-    if GymDrag and GymDrag.Running == true and GymDrag.Phase == "Forward" then
-        local frame = GymDrag.Frame
-        if frame then
-            local ap, sz = frame.AbsolutePosition, frame.AbsoluteSize
-            GymDrag.PointerPosition = Vector2.new(ap.X + sz.X * 0.5, ap.Y + sz.Y * 0.5)
+        local function fireActivated(btn)
+            if btn and HAS_FIRESIGNAL then
+                pcall(fireSignal, btn.Activated)
+            end
         end
-        GymDrag.Dragging       = true
-        GymDrag.LastSafeAreaAt = os.clock()
-        GymDrag.TargetProgress = 1
-    end
-end
 
--- Mogging: targets are clones named "ActiveClickMinigameButton" with an
--- .Activated handler that scores instantly. Catch them the moment they spawn.
-track(LocalPlayer:WaitForChild("PlayerGui").DescendantAdded:Connect(function(d)
-    if HUB.dead or not autoMog then return end
-    if d.Name == "ActiveClickMinigameButton" and d:IsA("GuiButton") then
-        -- one frame so the script's Activated:Connect is wired before we fire
-        task.defer(function()
-            if not HUB.dead and autoMog then fireActivated(d) end
-        end)
-    end
-end))
+        -- The gym uses two minigame singletons (require returns the live tables
+        -- the game itself drives). One handles Bench/Squat (ClickBar), the other
+        -- LatPulldown/Curl (DragBar). Driving them directly = one toggle does
+        -- ALL exercises with Perfect form, whatever machine you're on.
+        local GymClick, GymDrag
+        do
+            local ok, base = pcall(function()
+                return LocalPlayer.PlayerScripts.Client.Controllers.Gym
+            end)
+            if ok and base then
+                pcall(function() GymClick = require(base.GymClickBarMinigame) end)
+                pcall(function() GymDrag  = require(base.GymDragBarMinigame) end)
+            end
+        end
 
--- Bar minigames (Gym / TugofWar): spam Activated while the bar is visible.
-local function b8(frame)
-    return frame and frame.Visible and frame:FindFirstChild("ClickButton")
-end
+        local function driveGymClick()
+            -- Bench Press / Squat: fill the bar and bank a Perfect rep each cooldown.
+            if GymClick and GymClick.Running == true and GymClick.Reversing ~= true then
+                GymClick.ActiveRepStarted   = true
+                GymClick.ActiveRepStartedAt = os.clock()   -- ~0 elapsed => Perfect form
+                GymClick.Fill               = 1
+                pcall(function() GymClick:CompleteRep() end)
+            end
+        end
 
-track(RunService.Heartbeat:Connect(function()
-    if HUB.dead then return end
-    local pg = LocalPlayer:FindFirstChild("PlayerGui")
-    if not pg then return end
+        local function driveGymDrag()
+            -- Lat Pulldown / Curl: feign a drag to the endpoint; the game's own
+            -- Step loop then flips to the release phase and banks the rep.
+            if GymDrag and GymDrag.Running == true and GymDrag.Phase == "Forward" then
+                local frame = GymDrag.Frame
+                if frame then
+                    local ap, sz = frame.AbsolutePosition, frame.AbsoluteSize
+                    GymDrag.PointerPosition = Vector2.new(ap.X + sz.X * 0.5, ap.Y + sz.Y * 0.5)
+                end
+                GymDrag.Dragging       = true
+                GymDrag.LastSafeAreaAt = os.clock()
+                GymDrag.TargetProgress = 1
+            end
+        end
 
-    -- safety net for any Mogging circle the DescendantAdded hook missed
-    if autoMog then
-        local mog = pg:FindFirstChild("Mogging")
-        for _, d in ipairs((mog or pg):GetDescendants()) do
+        -- Mogging: targets are clones named "ActiveClickMinigameButton" with an
+        -- .Activated handler that scores instantly. Fire them as they spawn.
+        track(LocalPlayer:WaitForChild("PlayerGui").DescendantAdded:Connect(function(d)
+            if HUB.dead or not autoMog then return end
             if d.Name == "ActiveClickMinigameButton" and d:IsA("GuiButton") then
-                fireActivated(d)
+                task.defer(function()
+                    if not HUB.dead and autoMog then fireActivated(d) end
+                end)
             end
+        end))
+
+        local function getClickBtn(frame)
+            return frame and frame.Visible and frame:FindFirstChild("ClickButton")
         end
-    end
 
-    if autoGym then
-        driveGymClick()   -- Bench Press, Squat (+ golden variants)
-        driveGymDrag()    -- Lat Pulldown, Curl (+ golden variants)
-    end
+        track(RunService.Heartbeat:Connect(function()
+            if HUB.dead then return end
+            local pg = LocalPlayer:FindFirstChild("PlayerGui")
+            if not pg then return end
 
-    if autoTug then
-        for _, guiName in ipairs({ "Session", "Session2v2" }) do
-            local s = pg:FindFirstChild(guiName)
-            local bar = s and s:FindFirstChild("TugofWarBar")
-            local btn = b8(bar)
-            if btn then
-                for _ = 1, barClicks do fireActivated(btn) end
+            -- safety net for any Mogging circle the DescendantAdded hook missed
+            if autoMog then
+                local mog = pg:FindFirstChild("Mogging")
+                for _, d in ipairs((mog or pg):GetDescendants()) do
+                    if d.Name == "ActiveClickMinigameButton" and d:IsA("GuiButton") then
+                        fireActivated(d)
+                    end
+                end
             end
-        end
-    end
-end))
 
-AutoClickSub:AddSection("Auto Click")
-if not HAS_FIRESIGNAL then
-    AutoClickSub:AddParagraph({
-        Title = "Unsupported Executor",
-        Text = "Your executor does not expose 'firesignal', so the instant auto-clickers below cannot fire the in-game buttons. Use an executor that supports firesignal.",
-    })
+            if autoGym then
+                driveGymClick()   -- Bench Press, Squat (+ golden variants)
+                driveGymDrag()    -- Lat Pulldown, Curl (+ golden variants)
+            end
+
+            if autoTug then
+                for _, guiName in ipairs({ "Session", "Session2v2" }) do
+                    local s = pg:FindFirstChild(guiName)
+                    local bar = s and s:FindFirstChild("TugofWarBar")
+                    local btn = getClickBtn(bar)
+                    if btn then
+                        for _ = 1, barClicks do fireActivated(btn) end
+                    end
+                end
+            end
+        end))
+
+        AutoClickSub:AddSection("Auto Click")
+        if not HAS_FIRESIGNAL then
+            AutoClickSub:AddParagraph({
+                Title = "Unsupported Executor",
+                Text = "Your executor does not expose 'firesignal', so the instant auto-clickers cannot fire the in-game buttons. Use an executor that supports firesignal.",
+            })
+        end
+
+        AutoClickSub:AddToggle({
+            Name = "Mogging Auto Click", Default = false, Flag = "ac_mog",
+            Description = "Instantly clicks the CLICK circles as they spawn",
+            Callback = function(v)
+                autoMog = v
+                Notify("Auto Click", "Mogging " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
+            end,
+        })
+        AutoClickSub:AddToggle({
+            Name = "Gym Auto Click", Default = false, Flag = "ac_gym",
+            Description = "Auto-completes EVERY gym exercise (Bench, Squat, Lat Pulldown, Curl) with Perfect form",
+            Callback = function(v)
+                autoGym = v
+                Notify("Auto Click", "Gym " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
+            end,
+        })
+        AutoClickSub:AddToggle({
+            Name = "Tug of War Auto Click", Default = false, Flag = "ac_tug",
+            Description = "Auto-spams the tug-of-war click bar",
+            Callback = function(v)
+                autoTug = v
+                Notify("Auto Click", "Tug of War " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
+            end,
+        })
+        AutoClickSub:AddSlider({
+            Name = "Bar Clicks / Frame", Min = 1, Max = 100, Default = 25, Suffix = "", Flag = "ac_barrate",
+            Description = "How hard to spam Gym / Tug bars each frame",
+            Callback = function(v) barClicks = v end,
+        })
+    end,
+}
+
+-- Dispatch: load the current game's module if we support it.
+do
+    local entry = SupportedGames[game.GameId]
+    if entry then
+        local ok, err = pcall(entry.Build)
+        if ok then
+            Notify("Game Support", entry.Name .. " features loaded", "Success", 4)
+        else
+            warn("[Nox Hub] Failed to build game module for " .. tostring(entry.Name) .. ": " .. tostring(err))
+            Notify("Game Support", "Error loading " .. entry.Name .. " features", "Error", 5)
+        end
+    else
+        Notify("Universal Mode", "No specific support for this game yet — universal features only", "Info", 4)
+    end
 end
-
-AutoClickSub:AddToggle({
-    Name = "Mogging Auto Click", Default = false, Flag = "ac_mog",
-    Description = "Instantly clicks the CLICK circles as they spawn",
-    Callback = function(v)
-        autoMog = v
-        Notify("Auto Click", "Mogging " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
-    end,
-})
-AutoClickSub:AddToggle({
-    Name = "Gym Auto Click", Default = false, Flag = "ac_gym",
-    Description = "Auto-completes EVERY gym exercise (Bench, Squat, Lat Pulldown, Curl) with Perfect form",
-    Callback = function(v)
-        autoGym = v
-        Notify("Auto Click", "Gym " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
-    end,
-})
-AutoClickSub:AddToggle({
-    Name = "Tug of War Auto Click", Default = false, Flag = "ac_tug",
-    Description = "Auto-spams the tug-of-war click bar",
-    Callback = function(v)
-        autoTug = v
-        Notify("Auto Click", "Tug of War " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
-    end,
-})
-AutoClickSub:AddSlider({
-    Name = "Bar Clicks / Frame", Min = 1, Max = 100, Default = 25, Suffix = "", Flag = "ac_barrate",
-    Description = "How hard to spam Gym / Tug bars each frame",
-    Callback = function(v) barClicks = v end,
-})
 
 local ServerTab = Window:AddTab({ Name = "Server", Subtitle = "Join & hop", Icon = "globe" })
 local ServerSub = ServerTab:AddSubTab("Actions")
@@ -1509,7 +1535,6 @@ function HUB.Unload()
     if HUB.dead then return end
     HUB.dead = true
     flying = false; noclip = false; following = false; aim.enabled = false
-    autoMog = false; autoGym = false; autoTug = false
     pcall(function() if flyConn then flyConn:Disconnect() end end)
     pcall(function() if noclipConn then noclipConn:Disconnect() end end)
     for _, c in ipairs(HUB.conns) do pcall(function() c:Disconnect() end) end
