@@ -1444,7 +1444,7 @@ SupportedGames[10126164619] = {
 
         AutoClickSub:AddToggle({
             Name = "Mogging Auto Click", Default = false, Flag = "ac_mog",
-            Description = "Instantly clicks the CLICK circles as they spawn",
+            Description = "Clicks circles instantly",
             Callback = function(v)
                 autoMog = v
                 Notify("Auto Click", "Mogging " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
@@ -1452,7 +1452,7 @@ SupportedGames[10126164619] = {
         })
         AutoClickSub:AddToggle({
             Name = "Mog Auto Scan", Default = false, Flag = "ac_scan",
-            Description = "Auto-claims the ShapeTouch scan shapes during a mog battle (skips bombs)",
+            Description = "Claims scan shapes, skips bombs",
             Callback = function(v)
                 autoScan = v
                 Notify("Auto Click", "Auto Scan " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
@@ -1460,7 +1460,7 @@ SupportedGames[10126164619] = {
         })
         AutoClickSub:AddToggle({
             Name = "Gym Auto Click", Default = false, Flag = "ac_gym",
-            Description = "Auto-completes EVERY gym exercise (Bench, Squat, Lat Pulldown, Curl) with Perfect form",
+            Description = "All gym reps, Perfect form",
             Callback = function(v)
                 autoGym = v
                 Notify("Auto Click", "Gym " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
@@ -1468,7 +1468,7 @@ SupportedGames[10126164619] = {
         })
         AutoClickSub:AddToggle({
             Name = "Tug of War Auto Click", Default = false, Flag = "ac_tug",
-            Description = "Auto-spams the tug-of-war click bar",
+            Description = "Spams the tug bar",
             Callback = function(v)
                 autoTug = v
                 Notify("Auto Click", "Tug of War " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
@@ -1476,9 +1476,12 @@ SupportedGames[10126164619] = {
         })
         AutoClickSub:AddSlider({
             Name = "Bar Clicks / Frame", Min = 1, Max = 100, Default = 25, Suffix = "", Flag = "ac_barrate",
-            Description = "How hard to spam Gym / Tug bars each frame",
+            Description = "Tug bar click rate",
             Callback = function(v) barClicks = v end,
         })
+
+        -- focus this tab on load so the game's cheats are front-and-center
+        pcall(function() Window:_selectTab(GameTab) end)
     end,
 }
 
