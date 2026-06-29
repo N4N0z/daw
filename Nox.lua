@@ -1378,6 +1378,50 @@ SupportedGames[10126164619] = {
             end
         end
 
+        -- MoggingMusicMinigameClient = the "osu mania" A/S/D falling-note lanes.
+        -- A note scores Perfect when it reaches the hit marker; we force Perfect
+        -- via the game's own FinishTarget once the note is essentially on it.
+        local Music
+        do
+            local ok, mod = pcall(function()
+                return LocalPlayer.PlayerScripts.Client.UI.Mogging.MoggingMusicMinigameClient
+            end)
+            if ok and mod then pcall(function() Music = require(mod) end) end
+        end
+
+        local function driveMusic()
+            if not Music or Music.Running ~= true then return end
+            local targets = Music.ActiveTargets
+            if type(targets) ~= "table" then return end
+            for lane, data in pairs(targets) do
+                if type(data) == "table" and data.MarkedMiss ~= true
+                    and data.Model and data.Model.Parent then
+                    local prog = (os.clock() - (tonumber(data.StartedAt) or 0)) / math.max(0.1, tonumber(data.TravelTime) or 1)
+                    if prog >= 0.9 then   -- note is on/near the hit marker
+                        pcall(function() Music:FinishTarget(lane, "Perfect") end)
+                    end
+                end
+            end
+        end
+
+        -- MoggingArrowQTEClient = the sweeping arrow / green-zone timing bar.
+        -- Let the game judge: when its OWN EvaluateInput reports Perfect, submit.
+        local Arrow
+        do
+            local ok, mod = pcall(function()
+                return LocalPlayer.PlayerScripts.Client.UI.Mogging.MoggingArrowQTEClient
+            end)
+            if ok and mod then pcall(function() Arrow = require(mod) end) end
+        end
+
+        local function driveArrow()
+            if not Arrow or Arrow.Running ~= true or Arrow.Paused == true then return end
+            local ok, impact = pcall(function() return (Arrow:EvaluateInput()) end)
+            if ok and impact == "Perfect" then
+                pcall(function() Arrow:SubmitInput(Arrow.ComputerButton) end)
+            end
+        end
+
         local function driveGymClick()
             -- Bench Press / Squat: fill the bar and bank a Perfect rep each cooldown.
             if GymClick and GymClick.Running == true and GymClick.Reversing ~= true then
