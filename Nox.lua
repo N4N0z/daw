@@ -1613,6 +1613,37 @@ end
 
 SettingsSub:AddSection("UI")
 
+-- ── Misc: performance ───────────────────────────────────────────────────────
+local MiscSub = SettingsTab:AddSubTab("Misc")
+local setFPS = setfpscap or (getgenv and getgenv().setfpscap) or set_fps_cap
+local HAS_FPS = type(setFPS) == "function"
+local fpsUnlocked, fpsCap = false, 240
+
+MiscSub:AddSection("Performance")
+if not HAS_FPS then
+    MiscSub:AddParagraph({
+        Title = "FPS Unlock Unavailable",
+        Text = "Your executor does not expose 'setfpscap', so the FPS cap can't be changed.",
+    })
+end
+MiscSub:AddToggle({
+    Name = "Unlock FPS", Default = false, Flag = "misc_fpsunlock",
+    Description = "Raise the cap (max 240)",
+    Callback = function(v)
+        fpsUnlocked = v
+        if HAS_FPS then pcall(setFPS, v and fpsCap or 60) end
+        Notify("Misc", v and ("FPS cap set to " .. fpsCap) or "FPS cap back to 60", v and "Success" or "Info")
+    end,
+})
+MiscSub:AddSlider({
+    Name = "FPS Cap", Min = 30, Max = 240, Default = 240, Suffix = "", Flag = "misc_fpscap",
+    Description = "Applied while unlocked",
+    Callback = function(v)
+        fpsCap = v
+        if HAS_FPS and fpsUnlocked then pcall(setFPS, v) end
+    end,
+})
+
 function HUB.Unload()
     if HUB.dead then return end
     HUB.dead = true
