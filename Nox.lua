@@ -1522,19 +1522,11 @@ SupportedGames[10126164619] = {
         end
 
         AutoClickSub:AddToggle({
-            Name = "Mogging Auto Click", Default = false, Flag = "ac_mog",
-            Description = "Spam circles + timed osu circles",
+            Name = "Auto Mog Battle", Default = false, Flag = "ac_mog",
+            Description = "Solves every battle minigame",
             Callback = function(v)
                 autoMog = v
-                Notify("Auto Click", "Mogging " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
-            end,
-        })
-        AutoClickSub:AddToggle({
-            Name = "Mog Auto Scan", Default = false, Flag = "ac_scan",
-            Description = "Claims scan shapes, skips bombs",
-            Callback = function(v)
-                autoScan = v
-                Notify("Auto Click", "Auto Scan " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
+                Notify("Auto Mog", "Battle solver " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
             end,
         })
         AutoClickSub:AddToggle({
@@ -1545,17 +1537,9 @@ SupportedGames[10126164619] = {
                 Notify("Auto Click", "Gym " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
             end,
         })
-        AutoClickSub:AddToggle({
-            Name = "Tug of War Auto Click", Default = false, Flag = "ac_tug",
-            Description = "Spams the tug bar",
-            Callback = function(v)
-                autoTug = v
-                Notify("Auto Click", "Tug of War " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
-            end,
-        })
         AutoClickSub:AddSlider({
-            Name = "Bar Clicks / Frame", Min = 1, Max = 100, Default = 25, Suffix = "", Flag = "ac_barrate",
-            Description = "Tug bar click rate",
+            Name = "Tug Click Rate", Min = 1, Max = 100, Default = 25, Suffix = "", Flag = "ac_barrate",
+            Description = "Tug-of-war spam per frame",
             Callback = function(v) barClicks = v end,
         })
 
