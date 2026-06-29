@@ -1291,7 +1291,9 @@ local HAS_FIRESIGNAL = type(fireSignal) == "function"
 SupportedGames[10126164619] = {
     Name = "Looksmax & Mog",
     Build = function()
-        local GameTab = Window:AddTab({ Name = "Game", Subtitle = "Looksmax & Mog", Icon = "gamepad" })
+        local GameTab = Window:AddTab({ Name = "Game", Subtitle = "Looksmax & Mog", Icon = "rbxasset://textures/ui/Controls/DefaultController/Thumbstick1@2x.png" })
+        -- promote the supported-game tab to the front of the hotbar (main tab)
+        pcall(function() GameTab._hBtn.LayoutOrder = -1 end)
         local AutoClickSub = GameTab:AddSubTab("Auto Click")
 
         local autoMog   = false   -- click the spawning "CLICK" circles instantly
