@@ -1659,7 +1659,11 @@ SettingsSub:AddSection("UI")
 local MiscSub = SettingsTab:AddSubTab("Misc")
 local setFPS = setfpscap or (getgenv and getgenv().setfpscap) or set_fps_cap
 local HAS_FPS = type(setFPS) == "function"
-local fpsUnlocked, fpsCap = false, 240
+local fpsUnlocked, fpsCap = false, 0   -- 0 = unlimited
+
+local function applyFps()
+    if HAS_FPS then pcall(setFPS, fpsUnlocked and fpsCap or 60) end
+end
 
 MiscSub:AddSection("Performance")
 if not HAS_FPS then
@@ -1670,19 +1674,20 @@ if not HAS_FPS then
 end
 MiscSub:AddToggle({
     Name = "Unlock FPS", Default = false, Flag = "misc_fpsunlock",
-    Description = "Raise the cap (max 240)",
+    Description = "Removes the cap (0 = unlimited)",
     Callback = function(v)
         fpsUnlocked = v
-        if HAS_FPS then pcall(setFPS, v and fpsCap or 60) end
-        Notify("Misc", v and ("FPS cap set to " .. fpsCap) or "FPS cap back to 60", v and "Success" or "Info")
+        applyFps()
+        Notify("Misc", v and (fpsCap == 0 and "FPS uncapped (unlimited)" or ("FPS cap " .. fpsCap))
+            or "FPS cap back to 60", v and "Success" or "Info")
     end,
 })
 MiscSub:AddSlider({
-    Name = "FPS Cap", Min = 30, Max = 240, Default = 240, Suffix = "", Flag = "misc_fpscap",
-    Description = "Applied while unlocked",
+    Name = "FPS Cap", Min = 0, Max = 1000, Default = 0, Suffix = "", Flag = "misc_fpscap",
+    Description = "0 = unlimited",
     Callback = function(v)
         fpsCap = v
-        if HAS_FPS and fpsUnlocked then pcall(setFPS, v) end
+        if fpsUnlocked then applyFps() end
     end,
 })
 
