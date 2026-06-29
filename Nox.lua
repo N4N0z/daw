@@ -1337,16 +1337,22 @@ SupportedGames[10126164619] = {
         local function driveShapeTouch()
             if not ShapeTouch or ShapeTouch.Running ~= true then return end
             local battleId = ShapeTouch.ActiveBattleId
-            local anims    = ShapeTouch.Animations
             local clicked  = ShapeTouch.ClickedModels
-            if type(anims) ~= "table" then return end
-            for model in pairs(anims) do
+            local function claim(model)
                 if typeof(model) == "Instance" and model.Parent ~= nil
                     and (type(clicked) ~= "table" or clicked[model] ~= true)
                     and model:GetAttribute("ShapeKind") ~= "Bomb"           -- never touch bombs
                     and model:GetAttribute("BattleId") == battleId then
                     pcall(function() ShapeTouch:PlayShapeClickFeedback(model) end)
                 end
+            end
+            -- LocalShapesById is the authoritative spawn registry (keyed by ShapeId);
+            -- Animations is only the subset with running tweens, so check both.
+            if type(ShapeTouch.LocalShapesById) == "table" then
+                for _, model in pairs(ShapeTouch.LocalShapesById) do claim(model) end
+            end
+            if type(ShapeTouch.Animations) == "table" then
+                for model in pairs(ShapeTouch.Animations) do claim(model) end
             end
         end
 
@@ -1416,10 +1422,12 @@ SupportedGames[10126164619] = {
 
         local function driveArrow()
             if not Arrow or Arrow.Running ~= true or Arrow.Paused == true then return end
-            local ok, impact = pcall(function() return (Arrow:EvaluateInput()) end)
-            if ok and impact == "Perfect" then
-                pcall(function() Arrow:SubmitInput(Arrow.ComputerButton) end)
+            -- snap the arrow onto the target centre so the game's own judge
+            -- (|Position - TargetCenter| <= PerfectHalfWidth) is always Perfect
+            if type(Arrow.TargetCenter) == "number" then
+                Arrow.Position = Arrow.TargetCenter
             end
+            pcall(function() Arrow:SubmitInput(Arrow.ComputerButton) end)
         end
 
         local function driveGymClick()
