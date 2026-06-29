@@ -1430,9 +1430,10 @@ SupportedGames[10126164619] = {
                 local mog = pg:FindFirstChild("Mogging")
                 for _, d in ipairs((mog or pg):GetDescendants()) do
                     if d.Name == "ActiveClickMinigameButton" and d:IsA("GuiButton") then
-                        fireActivated(d)
+                        fireActivated(d)   -- spam circle: instant click = Perfect
                     end
                 end
+                driveQTE()   -- osu-timing circle: only fires inside the Perfect window
             end
 
             if autoGym then
