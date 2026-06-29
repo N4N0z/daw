@@ -1352,6 +1352,34 @@ SupportedGames[10126164619] = {
             end
         end
 
+        -- MoggingQTEClient = the "osu" timing circles. Unlike the spam circles
+        -- (instant click = Perfect), these score on a shrinking-ring timing:
+        -- Perfect only fires when reaction progress >= ReactionPerfectAt (~0.92).
+        -- So we wait for each target's window instead of clicking on spawn.
+        local QTE
+        do
+            local ok, mod = pcall(function()
+                return LocalPlayer.PlayerScripts.Client.UI.Mogging.MoggingQTEClient
+            end)
+            if ok and mod then pcall(function() QTE = require(mod) end) end
+        end
+
+        local function driveQTE()
+            if not QTE or QTE.Running ~= true then return end
+            local targets = QTE.ActiveTargets
+            if type(targets) ~= "table" then return end
+            for btn, data in pairs(targets) do
+                if typeof(btn) == "Instance" and btn.Parent ~= nil
+                    and type(data) == "table" and data.Clicked ~= true then
+                    local dur  = tonumber(data.CountdownDuration) or 3
+                    local prog = (os.clock() - (tonumber(data.SpawnedAt) or 0)) / math.max(0.1, dur)
+                    if prog >= 0.93 then   -- inside the Perfect window (ReactionPerfectAt ~0.92)
+                        fireActivated(btn)
+                    end
+                end
+            end
+        end
+
         local function driveGymClick()
             -- Bench Press / Squat: fill the bar and bank a Perfect rep each cooldown.
             if GymClick and GymClick.Running == true and GymClick.Reversing ~= true then
