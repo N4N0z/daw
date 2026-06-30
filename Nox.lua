@@ -1331,39 +1331,54 @@ local rf  = game:GetService("ReplicatedFirst")
 local sps = findByPath(game:GetService("StarterPlayer"), "StarterPlayerScripts")
 
 local SAClass  = safeRequire(findByPath(sps, "Client", "Handicap", "Systems", "SilentAim"))
-local FOVUtil  = safeRequire(findByPath(rf, "Sakura", "Util", "FOVUtil"))
 local VisUtil  = safeRequire(findByPath(rf, "Sakura", "Util", "VisibilityUtil"))
 local TargetU  = safeRequire(findByPath(sps, "Client", "Handicap", "TargetUtil"))
 local WeaponC  = safeRequire(findByPath(sps, "Client", "Weapon", "WeaponClient"))
 
-local SUPPORTED = SAClass and FOVUtil and TargetU
+local SUPPORTED = SAClass and TargetU
 
--- Pick the best lock target ourselves using a screen-space FOV (pixels from the
--- crosshair), optionally skipping the line-of-sight test for wall bang. This
--- mirrors the FOV circle exactly so what you see is what gets locked.
+-- Pick the best lock target by HEAD: choose the target whose head is closest to
+-- the crosshair inside the screen-space FOV, and aim at that head so shots land
+-- as headshots. Falls back to torso only when a target has no head (and only if
+-- Headshot Only is off). The valid-target list is cached briefly to cut cost.
+local cachedTargets, cachedAt = nil, 0
+local function getTargets()
+    local now = os.clock()
+    if cachedTargets and (now - cachedAt) < 0.12 then return cachedTargets end
+    cachedTargets = TargetU:getValidTargets()
+    cachedAt = now
+    return cachedTargets
+end
+
+local function aimBoneOf(inst)
+    local head = inst:FindFirstChild("Head")
+    if head then return head end
+    if silent.headOnly then return nil end
+    return inst:FindFirstChild("UpperTorso")
+        or inst:FindFirstChild("Torso")
+        or inst:FindFirstChild("LowerTorso")
+        or inst:FindFirstChild("HumanoidRootPart")
+end
+
 local function pickTarget(camCF)
     local origin = camCF.Position
-    local bones  = silent.headOnly and { "Head" } or DEFAULT_BONES
     local mouse  = UserInputService:GetMouseLocation()
     local center = Vector2.new(mouse.X, mouse.Y)
     local visParams = (not silent.wallbang) and TargetU:getRaycastParams() or nil
     local best, bestDist = nil, math.huge
-    for _, t in TargetU:getValidTargets() do
-        local inst = t.Instance
-        for _, boneName in ipairs(bones) do
-            local bone = inst:FindFirstChild(boneName)
-            if bone and bone:IsA("BasePart") then
-                local pos = bone.Position
-                local d3 = (pos - origin).Magnitude
-                if d3 <= silent.range and d3 >= silent.minRange then
-                    local sp, onScreen = Camera:WorldToViewportPoint(pos)
-                    if onScreen and sp.Z > 0 then
-                        local d2 = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-                        if d2 <= silent.fov and d2 < bestDist then
-                            if silent.wallbang or not VisUtil
-                                or VisUtil:isPositionVisible(origin, pos, visParams) then
-                                best, bestDist = pos, d2
-                            end
+    for _, t in ipairs(getTargets()) do
+        local bone = aimBoneOf(t.Instance)
+        if bone and bone:IsA("BasePart") then
+            local pos = bone.Position
+            local d3 = (pos - origin).Magnitude
+            if d3 <= silent.range and d3 >= silent.minRange then
+                local sp, onScreen = Camera:WorldToViewportPoint(pos)
+                if onScreen and sp.Z > 0 then
+                    local d2 = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                    if d2 <= silent.fov and d2 < bestDist then
+                        if silent.wallbang or not VisUtil
+                            or VisUtil:isPositionVisible(origin, pos, visParams) then
+                            best, bestDist = pos, d2
                         end
                     end
                 end
@@ -1377,16 +1392,18 @@ end
 -- getInstance():getPivotCFrame(camera) every shot and aims the bullet ray down
 -- whatever CFrame we return. Overriding the method (not the instance flags) means
 -- the game's handicap controller toggling Enabled / zeroing the FOV can't fight us.
+-- We capture the genuine method once so reloading the hub re-wraps cleanly.
 local function installOverride()
-    if not SUPPORTED or SAClass.__noxOverride then return end
-    local realPivot = SAClass.getPivotCFrame
+    if not SUPPORTED then return end
+    if not SAClass.__noxRealPivot then
+        SAClass.__noxRealPivot = SAClass.getPivotCFrame
+    end
     SAClass.getPivotCFrame = function(self, camCF)
-        if not silent.enabled then return realPivot(self, camCF) end
+        if not silent.enabled then return SAClass.__noxRealPivot(self, camCF) end
         local pos = pickTarget(camCF)
         if pos then return CFrame.lookAt(camCF.Position, pos) end
         return nil   -- no target -> normal shot
     end
-    SAClass.__noxOverride = true
 end
 
 -- Make sure a singleton exists so getInstance() is non-nil and the fire path
@@ -1398,20 +1415,23 @@ local function ensureInstance()
 end
 
 local function applyWallbang()
-    -- 1) Workspace attr covers parts that have no Wallbangable of their own (the
-    --    weapon walks ancestors until it finds one, reaching Workspace).
-    -- 2) Walls DO carry their own Wallbangable (drywall=1, concrete/steel=2...),
-    --    found before Workspace, so we also raise the equipped weapon's
-    --    WallbangThreshold above all of them to force penetration.
-    pcall(function()
-        Workspace:SetAttribute(WALLBANG_ATTR, silent.wallbang and -1e9 or nil)
-    end)
+    -- 1) Workspace attr covers parts with no Wallbangable of their own. Only write
+    --    when it actually changes - writing every frame spams AttributeChanged
+    --    listeners game-wide and causes the stutter.
+    -- 2) Walls carry their own Wallbangable (drywall=1, concrete/steel=2...), so we
+    --    also raise the equipped weapon's WallbangThreshold above all of them.
+    local want = silent.wallbang and -1e9 or nil
+    if Workspace:GetAttribute(WALLBANG_ATTR) ~= want then
+        pcall(function() Workspace:SetAttribute(WALLBANG_ATTR, want) end)
+    end
     if WeaponC then
         local cw = WeaponC.CurrentWeapon
         if cw then
             if silent.wallbang then
-                if cw.__noxOldWB == nil then cw.__noxOldWB = cw.WallbangThreshold or 0 end
-                cw.WallbangThreshold = WALLBANG_THRESHOLD
+                if cw.WallbangThreshold ~= WALLBANG_THRESHOLD then
+                    if cw.__noxOldWB == nil then cw.__noxOldWB = cw.WallbangThreshold or 0 end
+                    cw.WallbangThreshold = WALLBANG_THRESHOLD
+                end
             elseif cw.__noxOldWB ~= nil then
                 cw.WallbangThreshold = cw.__noxOldWB
                 cw.__noxOldWB = nil
@@ -1505,11 +1525,14 @@ else
 
     installOverride()
 
-    -- Keep the singleton alive (the game may destroy it for mouse players) and,
-    -- while wall bang is on, keep raising the currently-equipped weapon's
-    -- threshold so it survives weapon switches.
+    -- Keep the singleton alive and re-apply wall bang on a light timer (enough to
+    -- catch weapon switches) instead of every frame.
+    local nextApply = 0
     track(RunService.Heartbeat:Connect(function()
         if HUB.dead then return end
+        local now = os.clock()
+        if now < nextApply then return end
+        nextApply = now + 0.2
         if silent.enabled then ensureInstance() end
         if silent.wallbang then applyWallbang() end
     end))
