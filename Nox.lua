@@ -1337,8 +1337,9 @@ SupportedGames[10126164619] = {
         -- gamepass, so those are excluded). Re-asserting HRP every frame beats
         -- the server's position revert; the game's own zone detection (~14 studs)
         -- then reports the treadmill and body XP accrues.
-        local GymCtrl
-        pcall(function() GymCtrl = require(LocalPlayer.PlayerScripts.Client.Controllers.GymController) end)
+        local GymCtrl, GymLevelUI
+        pcall(function() GymCtrl    = require(LocalPlayer.PlayerScripts.Client.Controllers.GymController) end)
+        pcall(function() GymLevelUI = require(LocalPlayer.PlayerScripts.Client.Controllers.Gym.GymLevelUI) end)
         local TREADMILLS = {   -- best XP first; req = body level required
             { name = "Level7Treadmill", req = 7 },
             { name = "Level3Treadmill", req = 5 },
@@ -1347,7 +1348,21 @@ SupportedGames[10126164619] = {
         }
         local treadTarget, treadName, lastTreadScan = nil, nil, 0
         local function bodyLevel()
-            return (GymCtrl and tonumber(GymCtrl.LastKnownBodyLevel)) or 1
+            -- The HUD "Body Level: N" label is populated from the initial profile
+            -- sync, so it's correct right after joining (unlike LastKnownBodyLevel,
+            -- which only updates when a GymProgressUpdated event fires). Fall back
+            -- to the gym module state, then 1.
+            local pg  = LocalPlayer:FindFirstChild("PlayerGui")
+            local hud = pg and pg:FindFirstChild("Hud")
+            local gl  = hud and hud:FindFirstChild("GymLevel")
+            local bl  = gl and gl:FindFirstChild("BodyLevel")
+            if bl and bl:IsA("TextLabel") then
+                local n = tostring(bl.Text):match("(%d+)")
+                if n then return tonumber(n) end
+            end
+            if GymLevelUI and tonumber(GymLevelUI.LastBodyLevel) then return tonumber(GymLevelUI.LastBodyLevel) end
+            if GymCtrl and tonumber(GymCtrl.LastKnownBodyLevel) then return tonumber(GymCtrl.LastKnownBodyLevel) end
+            return 1
         end
         local function pickTreadmill()
             local lvl = bodyLevel()
@@ -1887,8 +1902,7 @@ SupportedGames[10126164619] = {
         QueueSub:AddSection("Matchmaking")
         if not canFire() then
             QueueSub:AddParagraph({
-                Title = "Unavailable",l
-
+                Title = "Unavailable",
                 Text = "Couldn't reach the matchmaking remote (ReplicatedStorage.Shared.Lib.F). Auto Queue won't work on this build.",
             })
         end
