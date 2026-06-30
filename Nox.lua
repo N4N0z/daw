@@ -1572,6 +1572,125 @@ SupportedGames[10126164619] = {
             end
         end))
 
+        -- ── Auto Gym Farm ───────────────────────────────────────────────────
+        -- A workout can ONLY be started by the machine's server-side ProximityPrompt
+        -- (there is no "start workout" remote). So we walk to a machine, hold its
+        -- prompt (fireproximityprompt), then let the rep solver bank Perfect reps.
+        -- Fatigue is a SHARED pool (~8 reps + body level); when it's spent the server
+        -- fires "GymFatigueLimitReached" with .Remaining seconds. We rest by standing
+        -- on a treadmill Runway (the game auto-detects the zone and pays XP/sec) until
+        -- the pool resets, then rotate to the next exercise.
+        -- Verified live: all 4 machines start, server accepts reps, fatigue returns
+        -- Remaining=30, treadmill zone registers.
+        local farmActive = false
+        local GymCtrl, GymWorkout
+        do
+            local ok1, c = pcall(function() return require(LocalPlayer.PlayerScripts.Client.Controllers.GymController) end)
+            if ok1 then GymCtrl = c end
+            local ok2, w = pcall(function() return require(LocalPlayer.PlayerScripts.Client.Controllers.Gym.GymWorkoutClient) end)
+            if ok2 then GymWorkout = w end
+        end
+
+        local farmFatigueRemaining = nil
+        if F and type(F.ServerToClient) == "table" and type(F.ServerToClient.Listen) == "function" then
+            -- F.Listen APPENDS handlers (table.insert), so this runs alongside the
+            -- game's own listener without clobbering it.
+            pcall(function()
+                F.ServerToClient.Listen({
+                    GymFatigueLimitReached = function(p)
+                        if type(p) == "table" then farmFatigueRemaining = tonumber(p.Remaining) or 30 end
+                    end,
+                })
+            end)
+        end
+
+        local FARM_EXERCISES = { "BenchPress", "Squat", "LatPulldown", "Curl" }
+        local function nearestModel(name)
+            local gym = Workspace:FindFirstChild("Gym")
+            local hrp = GetHRP()
+            if not gym or not hrp then return nil end
+            local best, bestD
+            for _, c in ipairs(gym:GetChildren()) do
+                if c.Name == name then
+                    local ok, pivot = pcall(function() return c:GetPivot().Position end)
+                    if ok then
+                        local d = (pivot - hrp.Position).Magnitude
+                        if not bestD or d < bestD then bestD = d; best = c end
+                    end
+                end
+            end
+            return best
+        end
+        local function isInGym()
+            if not GymCtrl then return true end
+            if GymCtrl.IsInGym then local ok, v = pcall(function() return GymCtrl:IsInGym() end); if ok then return v == true end end
+            return GymCtrl.InGym == true
+        end
+        local function inWorkoutNow()
+            if not GymCtrl then return false end
+            return GymCtrl.InWorkout == true
+        end
+        local function startWorkoutAt(machine)
+            local hrp = GetHRP(); if not hrp then return false end
+            local pp = machine:FindFirstChild("ProximityPart"); if not pp then return false end
+            local prompt = pp:FindFirstChildWhichIsA("ProximityPrompt"); if not prompt then return false end
+            local seat = machine:FindFirstChild("SeatLocation") or pp
+            hrp.CFrame = CFrame.new(seat.Position + Vector3.new(0, 3, 0))
+            task.wait(1)                                   -- let position settle + prompt register
+            if HUB.dead or not farmActive then return false end
+            if type(fireproximityprompt) == "function" then pcall(fireproximityprompt, prompt) end
+            local t0 = os.clock()
+            repeat task.wait(0.1) until inWorkoutNow() or os.clock() - t0 > 4 or HUB.dead or not farmActive
+            return inWorkoutNow()
+        end
+        local function restOnTreadmill(seconds)
+            local runwayModel = nearestModel("Level1Treadmill")  -- no body-level gate, always usable
+            local runway = runwayModel and runwayModel:FindFirstChild("Runway", true)
+            local tEnd = os.clock() + seconds
+            while not HUB.dead and farmActive and os.clock() < tEnd do
+                local hrp = GetHRP()
+                if hrp and runway then hrp.CFrame = CFrame.new(runway.Position + Vector3.new(0, 3, 0)) end
+                task.wait(0.4)                              -- the game self-reports the treadmill zone -> XP
+            end
+        end
+
+        local farmIndex = 1
+        local farmWarned = false
+        task.spawn(function()
+            while true do
+                if HUB.dead then return end
+                if not farmActive or not GymCtrl or not GymWorkout then
+                    task.wait(0.4)
+                elseif not isInGym() then
+                    if not farmWarned then
+                        farmWarned = true
+                        Notify("Auto Farm", "Enter the gym first (press the GYM button), then farming begins.", "Info", 4)
+                    end
+                    task.wait(1)
+                else
+                    farmWarned = false
+                    farmFatigueRemaining = nil
+                    local exName = FARM_EXERCISES[farmIndex]
+                    farmIndex = farmIndex % #FARM_EXERCISES + 1
+                    local machine = nearestModel(exName)
+                    if machine and startWorkoutAt(machine) then
+                        -- bank Perfect reps until the shared fatigue pool is spent
+                        local t0 = os.clock()
+                        while not HUB.dead and farmActive and farmFatigueRemaining == nil
+                            and inWorkoutNow() and os.clock() - t0 < 40 do
+                            driveGymClick()   -- Bench / Squat
+                            driveGymDrag()    -- Lat Pulldown / Curl
+                            task.wait(0.08)
+                        end
+                    end
+                    pcall(function() GymWorkout:RequestExit("AutoFarm") end)
+                    if farmActive and not HUB.dead then
+                        restOnTreadmill((farmFatigueRemaining or 4) + 2)   -- run while fatigue resets
+                    end
+                end
+            end
+        end)
+
         AutoClickSub:AddSection("Supported Game")
         AutoClickSub:AddParagraph({
             Title = "\u{2705} Looksmax & Mog",
