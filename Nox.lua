@@ -1272,6 +1272,171 @@ AimSub:AddColorPicker({
     Callback = function(c) aim.fovColor = c end,
 })
 
+-- ── Silent Aim (universal hit-detection hook) ───────────────────────────────
+local SilentSub = CombatTab:AddSubTab("Silent Aim")
+
+local SILENT_HOOKS = type(hookmetamethod) == "function"
+    and type(getnamecallmethod) == "function"
+    and type(newcclosure) == "function"
+
+-- Persistent settings table so re-running the hub never re-hooks the metatable.
+local SILENT = (getgenv and getgenv().NoxSilent) or {
+    enabled = false, fov = 150, part = "Head",
+    teamCheck = false, aliveCheck = true,
+    hold = true,        -- only act while holding Right-Click (protects movement)
+    remote = true,      -- rewrite Vector3/CFrame/part args in FireServer/InvokeServer
+    raycast = false,    -- redirect camera-origin Raycasts toward the target
+}
+if getgenv then getgenv().NoxSilent = SILENT end
+
+local function silentActive()
+    if not SILENT.enabled then return false end
+    if SILENT.hold then
+        return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+    end
+    return true
+end
+
+local function silentTarget()
+    local cam = Workspace.CurrentCamera
+    if not cam then return nil end
+    local lp = Players.LocalPlayer
+    local mouse = UserInputService:GetMouseLocation()
+    local center = Vector2.new(mouse.X, mouse.Y)
+    local best, bestDist
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= lp and not (SILENT.teamCheck and p.Team and lp.Team and p.Team == lp.Team) then
+            local char = p.Character
+            local part = char and (char:FindFirstChild(SILENT.part)
+                or char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart"))
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if part and ((not SILENT.aliveCheck) or (hum and hum.Health > 0)) then
+                local sp, on = cam:WorldToViewportPoint(part.Position)
+                if on then
+                    local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                    if d <= SILENT.fov and (not bestDist or d < bestDist) then
+                        best, bestDist = part, d
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+-- Install the metatable hook exactly once per session.
+if SILENT_HOOKS and getgenv and not getgenv().NoxSilentHooked then
+    getgenv().NoxSilentHooked = true
+
+    local function isCharPart(inst)
+        if typeof(inst) ~= "Instance" or not inst:IsA("BasePart") then return false end
+        for _, pl in ipairs(Players:GetPlayers()) do
+            if pl ~= Players.LocalPlayer and pl.Character and inst:IsDescendantOf(pl.Character) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local oldNamecall
+    oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+        if silentActive() and not checkcaller() then
+            local method = getnamecallmethod()
+            if SILENT.remote and (method == "FireServer" or method == "InvokeServer") then
+                local target = silentTarget()
+                if target then
+                    local args = table.pack(...)
+                    local changed = false
+                    for i = 1, args.n do
+                        local v = args[i]
+                        local t = typeof(v)
+                        if t == "Vector3" then args[i] = target.Position; changed = true
+                        elseif t == "CFrame" then args[i] = CFrame.new(target.Position); changed = true
+                        elseif t == "Instance" and isCharPart(v) then args[i] = target; changed = true
+                        end
+                    end
+                    if changed then return oldNamecall(self, table.unpack(args, 1, args.n)) end
+                end
+            elseif SILENT.raycast and method == "Raycast" then
+                local origin, dir = ...
+                if typeof(origin) == "Vector3" and typeof(dir) == "Vector3"
+                    and (origin - Workspace.CurrentCamera.CFrame.Position).Magnitude < 12 then
+                    local target = silentTarget()
+                    if target then
+                        return oldNamecall(self, origin, (target.Position - origin).Unit * dir.Magnitude, (select(3, ...)))
+                    end
+                end
+            elseif SILENT.raycast and (method == "FindPartOnRayWithIgnoreList"
+                or method == "FindPartOnRayWithWhitelist" or method == "FindPartOnRay") then
+                local ray = ...
+                if typeof(ray) == "Ray"
+                    and (ray.Origin - Workspace.CurrentCamera.CFrame.Position).Magnitude < 12 then
+                    local target = silentTarget()
+                    if target then
+                        local rest = table.pack(select(2, ...))
+                        local newRay = Ray.new(ray.Origin, (target.Position - ray.Origin).Unit * ray.Direction.Magnitude)
+                        return oldNamecall(self, newRay, table.unpack(rest, 1, rest.n))
+                    end
+                end
+            end
+        end
+        return oldNamecall(self, ...)
+    end))
+end
+
+SilentSub:AddSection("Silent Aim")
+if not SILENT_HOOKS then
+    SilentSub:AddParagraph({
+        Title = "Unsupported Executor",
+        Text = "Silent Aim needs hookmetamethod + getnamecallmethod. Your executor doesn't expose them.",
+    })
+end
+SilentSub:AddParagraph({
+    Title = "How it works",
+    Text = "Redirects the game's hit detection to the closest target near your crosshair. Universal, but exact behavior depends on the game. Keep 'Only While Aiming' on to protect normal movement.",
+})
+SilentSub:AddToggle({
+    Name = "Enabled", Default = false, Flag = "silent_enabled",
+    Callback = function(v)
+        SILENT.enabled = v and SILENT_HOOKS
+        if v and not SILENT_HOOKS then Notify("Silent Aim", "Executor lacks hook functions", "Error", 4)
+        else Notify("Silent Aim", v and "Enabled" or "Disabled", v and "Success" or "Error") end
+    end,
+})
+SilentSub:AddSlider({
+    Name = "FOV (px)", Min = 30, Max = 600, Default = 150, Suffix = "", Flag = "silent_fov",
+    Description = "Pick the target within this radius of the cursor",
+    Callback = function(v) SILENT.fov = v end,
+})
+local applySilentPart = function(v) SILENT.part = v end
+local silentPartDD = SilentSub:AddDropdown({
+    Name = "Target Part", Options = { "Head", "UpperTorso", "Torso", "HumanoidRootPart" },
+    Default = "Head", MaxVisible = 4, Flag = "silent_part",
+    Callback = applySilentPart,
+})
+registerResync(silentPartDD, applySilentPart)
+
+SilentSub:AddSection("Hook Mode")
+SilentSub:AddToggle({
+    Name = "Rewrite Remotes", Default = true, Flag = "silent_remote",
+    Description = "Replace hit position / part args (most games)",
+    Callback = function(v) SILENT.remote = v end,
+})
+SilentSub:AddToggle({
+    Name = "Redirect Raycasts", Default = false, Flag = "silent_raycast",
+    Description = "For client raycast hit-detection (can be risky)",
+    Callback = function(v) SILENT.raycast = v end,
+})
+
+SilentSub:AddSection("Filters & Activation")
+SilentSub:AddToggle({ Name = "Team Check", Default = false, Flag = "silent_team", Callback = function(v) SILENT.teamCheck = v end })
+SilentSub:AddToggle({ Name = "Alive Check", Default = true, Flag = "silent_alive", Callback = function(v) SILENT.aliveCheck = v end })
+SilentSub:AddToggle({
+    Name = "Only While Aiming (RMB)", Default = true, Flag = "silent_hold",
+    Description = "Recommended — only rewrites while you hold Right-Click",
+    Callback = function(v) SILENT.hold = v end,
+})
+
 -- ════════════════════════════════════════════════════════════════════════════
 -- GAME SUPPORT FRAMEWORK
 -- The universal tabs above load in every game. Each entry in SupportedGames is
