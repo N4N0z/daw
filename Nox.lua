@@ -1294,11 +1294,13 @@ local SilentSub = CombatTab:AddSubTab("Silent Aim")
 
 local silent = {
     enabled  = false,
-    fov      = 360,   -- angular FOV in degrees (360 = whole screen)
+    fov      = 250,   -- screen-space radius in pixels (matches the FOV circle)
     range    = 1000,
     minRange = 0,
     headOnly = false,
     wallbang = false, -- pierce walls + lock targets through geometry
+    showFov  = true,
+    fovColor = Color3.fromRGB(0, 200, 255),
 }
 local DEFAULT_BONES = { "Head", "UpperTorso", "LowerTorso" }
 local WALLBANG_ATTR = "Wallbangable"
@@ -1336,26 +1338,32 @@ local WeaponC  = safeRequire(findByPath(sps, "Client", "Weapon", "WeaponClient")
 
 local SUPPORTED = SAClass and FOVUtil and TargetU
 
--- Pick the best lock target ourselves using our own FOV/range, optionally
--- skipping the line-of-sight test for wall bang.
+-- Pick the best lock target ourselves using a screen-space FOV (pixels from the
+-- crosshair), optionally skipping the line-of-sight test for wall bang. This
+-- mirrors the FOV circle exactly so what you see is what gets locked.
 local function pickTarget(camCF)
     local origin = camCF.Position
     local bones  = silent.headOnly and { "Head" } or DEFAULT_BONES
+    local mouse  = UserInputService:GetMouseLocation()
+    local center = Vector2.new(mouse.X, mouse.Y)
     local visParams = (not silent.wallbang) and TargetU:getRaycastParams() or nil
-    local best, bestScore = nil, math.huge
+    local best, bestDist = nil, math.huge
     for _, t in TargetU:getValidTargets() do
         local inst = t.Instance
         for _, boneName in ipairs(bones) do
             local bone = inst:FindFirstChild(boneName)
             if bone and bone:IsA("BasePart") then
                 local pos = bone.Position
-                local d = (pos - origin).Magnitude
-                if d <= silent.range and d >= silent.minRange then
-                    local ang = FOVUtil:calculateAngle(camCF, pos)
-                    if ang <= silent.fov / 2 and ang < bestScore then
-                        if silent.wallbang or not VisUtil
-                            or VisUtil:isPositionVisible(origin, pos, visParams) then
-                            best, bestScore = pos, ang
+                local d3 = (pos - origin).Magnitude
+                if d3 <= silent.range and d3 >= silent.minRange then
+                    local sp, onScreen = Camera:WorldToViewportPoint(pos)
+                    if onScreen and sp.Z > 0 then
+                        local d2 = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                        if d2 <= silent.fov and d2 < bestDist then
+                            if silent.wallbang or not VisUtil
+                                or VisUtil:isPositionVisible(origin, pos, visParams) then
+                                best, bestDist = pos, d2
+                            end
                         end
                     end
                 end
@@ -1439,8 +1447,8 @@ else
         end,
     })
     SilentSub:AddSlider({
-        Name = "FOV", Min = 1, Max = 360, Default = 360, Suffix = "°", Flag = "silent_fov",
-        Description = "Angular cone the lock searches inside",
+        Name = "FOV", Min = 30, Max = 800, Default = 250, Suffix = "px", Flag = "silent_fov",
+        Description = "Screen radius the lock searches inside (matches the circle)",
         Callback = function(v) silent.fov = v end,
     })
     SilentSub:AddSlider({
@@ -1467,6 +1475,33 @@ else
             Notify("Silent Aim", v and "Wallbang ON — shots pierce walls" or "Wallbang OFF", v and "Success" or "Error")
         end,
     })
+
+    SilentSub:AddSection("FOV Circle")
+    SilentSub:AddToggle({
+        Name = "Show FOV Circle", Default = true, Flag = "silent_showfov",
+        Description = hasDrawing and "Draw the lock radius around the crosshair" or "Drawing API unavailable on this executor",
+        Callback = function(v)
+            silent.showFov = v and hasDrawing
+            if v and not hasDrawing then Notify("Silent Aim", "FOV circle needs Drawing API", "Warning", 3) end
+        end,
+    })
+    SilentSub:AddColorPicker({
+        Name = "FOV Circle Color", Default = Color3.fromRGB(0, 200, 255), Flag = "silent_fovcolor",
+        Callback = function(c) silent.fovColor = c end,
+    })
+
+    local silentFovCircle = newDrawing("Circle", { Thickness = 1.5, Filled = false, Visible = false })
+    track(RunService.RenderStepped:Connect(function()
+        if HUB.dead or not silentFovCircle then return end
+        local show = silent.enabled and silent.showFov and hasDrawing
+        silentFovCircle.Visible = show
+        if show then
+            local mouse = UserInputService:GetMouseLocation()
+            silentFovCircle.Position = Vector2.new(mouse.X, mouse.Y)
+            silentFovCircle.Radius   = silent.fov
+            silentFovCircle.Color    = silent.fovColor
+        end
+    end))
 
     installOverride()
 
