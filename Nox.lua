@@ -2172,6 +2172,7 @@ function HUB.Unload()
     if HUB.dead then return end
     HUB.dead = true
     flying = false; noclip = false; following = false; aim.enabled = false
+    if getgenv and getgenv().NoxSilent then getgenv().NoxSilent.enabled = false end
     pcall(function() if flyConn then flyConn:Disconnect() end end)
     pcall(function() if noclipConn then noclipConn:Disconnect() end end)
     for _, c in ipairs(HUB.conns) do pcall(function() c:Disconnect() end) end
