@@ -1395,7 +1395,7 @@ local function installOverride()
         SAClass.__noxRealPivot = SAClass.getPivotCFrame
     end
     SAClass.getPivotCFrame = function(self, camCF)
-        if not silent.enabled then return SAClass.__noxRealPivot(self, camCF) end
+        if not (silent.enabled or silent.wallbang) then return SAClass.__noxRealPivot(self, camCF) end
         local pos = pickTarget(camCF)
         if pos then return CFrame.lookAt(camCF.Position, pos) end
         return nil   -- no target -> normal shot
@@ -1444,7 +1444,7 @@ local function applyAccuracy()
     if not WeaponC then return end
     local cw = WeaponC.CurrentWeapon
     if not cw then return end
-    if silent.enabled and silent.noSpread then
+    if (silent.enabled or silent.wallbang) and silent.noSpread then
         cw.__noxAcc = cw.__noxAcc or {}
         for _, f in ipairs(SPREAD_FIELDS) do
             local cur = cw[f]
@@ -1462,7 +1462,7 @@ end
 
 local function applySilent()
     installOverride()
-    if silent.enabled then ensureInstance() end
+    if silent.enabled or silent.wallbang then ensureInstance() end
     applyWallbang()
     applyAccuracy()
 end
@@ -1531,7 +1531,7 @@ else
     local silentFovCircle = newDrawing("Circle", { Thickness = 1.5, Filled = false, Visible = false })
     track(RunService.RenderStepped:Connect(function()
         if HUB.dead or not silentFovCircle then return end
-        local show = silent.enabled and silent.showFov and hasDrawing
+        local show = (silent.enabled or silent.wallbang) and silent.showFov and hasDrawing
         silentFovCircle.Visible = show
         if show then
             local mouse = UserInputService:GetMouseLocation()
@@ -1551,9 +1551,9 @@ else
         local now = os.clock()
         if now < nextApply then return end
         nextApply = now + 0.2
-        if silent.enabled then ensureInstance() end
+        if silent.enabled or silent.wallbang then ensureInstance() end
         if silent.wallbang then applyWallbang() end
-        if silent.enabled and silent.noSpread then applyAccuracy() end
+        if (silent.enabled or silent.wallbang) and silent.noSpread then applyAccuracy() end
     end))
 end
 
