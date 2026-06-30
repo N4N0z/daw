@@ -1295,10 +1295,9 @@ local SilentSub = CombatTab:AddSubTab("Silent Aim")
 local silent = {
     enabled  = false,
     fov      = 250,   -- screen-space radius in pixels (matches the FOV circle)
-    range    = 1000,
-    minRange = 0,
     headOnly = false,
     wallbang = false, -- pierce walls + lock targets through geometry
+    noSpread = true,  -- zero bullet spread so the head-aimed ray always lands
     showFov  = true,
     fovColor = Color3.fromRGB(0, 200, 255),
 }
@@ -1370,16 +1369,13 @@ local function pickTarget(camCF)
         local bone = aimBoneOf(t.Instance)
         if bone and bone:IsA("BasePart") then
             local pos = bone.Position
-            local d3 = (pos - origin).Magnitude
-            if d3 <= silent.range and d3 >= silent.minRange then
-                local sp, onScreen = Camera:WorldToViewportPoint(pos)
-                if onScreen and sp.Z > 0 then
-                    local d2 = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-                    if d2 <= silent.fov and d2 < bestDist then
-                        if silent.wallbang or not VisUtil
-                            or VisUtil:isPositionVisible(origin, pos, visParams) then
-                            best, bestDist = pos, d2
-                        end
+            local sp, onScreen = Camera:WorldToViewportPoint(pos)
+            if onScreen and sp.Z > 0 then
+                local d2 = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                if d2 <= silent.fov and d2 < bestDist then
+                    if silent.wallbang or not VisUtil
+                        or VisUtil:isPositionVisible(origin, pos, visParams) then
+                        best, bestDist = pos, d2
                     end
                 end
             end
@@ -1440,10 +1436,35 @@ local function applyWallbang()
     end
 end
 
+-- Zero the equipped weapon's bullet spread so the head-aimed ray lands exactly.
+-- We swap the spread range FIELDS for fresh {0,0} tables (never mutate the shared
+-- registry config) and stash the originals to restore on disable / weapon switch.
+local SPREAD_FIELDS = { "InaccuracyRange", "UnscopedInaccuracyRange", "ScopedInaccuracyRange" }
+local function applyAccuracy()
+    if not WeaponC then return end
+    local cw = WeaponC.CurrentWeapon
+    if not cw then return end
+    if silent.enabled and silent.noSpread then
+        cw.__noxAcc = cw.__noxAcc or {}
+        for _, f in ipairs(SPREAD_FIELDS) do
+            local cur = cw[f]
+            if type(cur) == "table" and not (cur.Min == 0 and cur.Max == 0) then
+                cw.__noxAcc[f] = cur
+                cw[f] = { Min = 0, Max = 0 }
+            end
+        end
+        cw.InaccuracyIntensity = 0
+    elseif cw.__noxAcc then
+        for f, old in pairs(cw.__noxAcc) do cw[f] = old end
+        cw.__noxAcc = nil
+    end
+end
+
 local function applySilent()
     installOverride()
     if silent.enabled then ensureInstance() end
     applyWallbang()
+    applyAccuracy()
 end
 
 if not SUPPORTED then
@@ -1471,18 +1492,15 @@ else
         Description = "Screen radius the lock searches inside (matches the circle)",
         Callback = function(v) silent.fov = v end,
     })
-    SilentSub:AddSlider({
-        Name = "Range", Min = 50, Max = 5000, Default = 1000, Suffix = "", Flag = "silent_range",
-        Callback = function(v) silent.range = v end,
-    })
-    SilentSub:AddSlider({
-        Name = "Min Range", Min = 0, Max = 50, Default = 0, Suffix = "", Flag = "silent_minrange",
-        Callback = function(v) silent.minRange = v end,
-    })
     SilentSub:AddToggle({
         Name = "Headshot Only", Default = false, Flag = "silent_head",
-        Description = "Lock the ray onto heads only",
+        Description = "Lock the ray onto heads only (off = head with body fallback)",
         Callback = function(v) silent.headOnly = v end,
+    })
+    SilentSub:AddToggle({
+        Name = "Perfect Accuracy", Default = true, Flag = "silent_nospread",
+        Description = "Remove bullet spread so head shots always land",
+        Callback = function(v) silent.noSpread = v; applySilent() end,
     })
 
     SilentSub:AddSection("Wall Bang")
@@ -1535,6 +1553,7 @@ else
         nextApply = now + 0.2
         if silent.enabled then ensureInstance() end
         if silent.wallbang then applyWallbang() end
+        if silent.enabled and silent.noSpread then applyAccuracy() end
     end))
 end
 
@@ -2400,9 +2419,16 @@ function HUB.Unload()
     silent.wallbang = false
     pcall(function() Workspace:SetAttribute(WALLBANG_ATTR, nil) end)
     pcall(function()
-        if WeaponC and WeaponC.CurrentWeapon and WeaponC.CurrentWeapon.__noxOldWB ~= nil then
-            WeaponC.CurrentWeapon.WallbangThreshold = WeaponC.CurrentWeapon.__noxOldWB
-            WeaponC.CurrentWeapon.__noxOldWB = nil
+        if WeaponC and WeaponC.CurrentWeapon then
+            local cw = WeaponC.CurrentWeapon
+            if cw.__noxOldWB ~= nil then
+                cw.WallbangThreshold = cw.__noxOldWB
+                cw.__noxOldWB = nil
+            end
+            if cw.__noxAcc then
+                for f, old in pairs(cw.__noxAcc) do cw[f] = old end
+                cw.__noxAcc = nil
+            end
         end
     end)
     pcall(function()
