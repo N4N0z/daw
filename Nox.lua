@@ -1532,6 +1532,13 @@ SupportedGames[10126164619] = {
             end)
             if ok then F = mod end
         end
+        local MogUtil
+        do
+            local ok, u = pcall(function()
+                return require(LocalPlayer.PlayerScripts.Client.UI.Mogging.MoggingUIUtil)
+            end)
+            if ok then MogUtil = u end
+        end
         local function canFire()
             return F and type(F.ClientToServer) == "table" and type(F.ClientToServer.Fire) == "function"
         end
@@ -1540,14 +1547,40 @@ SupportedGames[10126164619] = {
             if UserInputService.GamepadEnabled and not UserInputService.KeyboardEnabled then return "Gamepad" end
             return "KeyboardMouse"
         end
-        local BUSY_GUIS = { "PreMatchmaking", "Matchmaking", "Session", "Session2v2", "Conclusion", "BossConclusion" }
-        local function inLobby(pg)
-            for _, name in ipairs(BUSY_GUIS) do
-                local g = pg:FindFirstChild(name)
-                if g and g.Enabled then return false end
-            end
-            return true
+
+        -- IMPORTANT: GUI .Enabled flags are NOT reliable for "am I in a match" -- during
+        -- a battle every mogging GUI can read false while MoggingController still holds an
+        -- ActiveSessionBattleId (which itself is never cleared, so it's useless too). The
+        -- only trustworthy signal is the server's own match lifecycle. F.Listen APPENDS
+        -- handlers, so we ride alongside the game's: stay "busy" from search start through
+        -- the entire match, and only allow a requeue a few seconds after MoggingSessionFinished.
+        local mogBusy = false
+        if F and type(F.ServerToClient) == "table" and type(F.ServerToClient.Listen) == "function" then
+            pcall(function()
+                F.ServerToClient.Listen({
+                    MoggingSearchStarted       = function() mogBusy = true end,
+                    MoggingOpponentFound       = function() mogBusy = true end,
+                    MoggingSessionStarted      = function() mogBusy = true end,
+                    MoggingSessionReadyToStart = function() mogBusy = true end,
+                    MoggingSearchFailed        = function() mogBusy = false end,
+                    MoggingSessionFinished     = function()
+                        -- match over; let the results screen show, then re-allow queueing
+                        task.delay(4, function() mogBusy = false end)
+                    end,
+                })
+            end)
         end
+
+        -- live "in a battle / searching right now" backstop, independent of the events
+        local function inSessionNow(pg)
+            if MogUtil and MogUtil.SessionActive == true then return true end
+            for _, n in ipairs({ "Session", "Session2v2", "Matchmaking", "Conclusion", "BossConclusion" }) do
+                local g = pg:FindFirstChild(n)
+                if g and g.Enabled then return true end
+            end
+            return false
+        end
+
         local function fireQueue(mode)
             if not canFire() then return false end
             pcall(function()
@@ -1556,6 +1589,7 @@ SupportedGames[10126164619] = {
             return true
         end
         local function leaveQueue()
+            mogBusy = false
             if not canFire() then return end
             pcall(function() F.ClientToServer.Fire("CancelMoggingQueue", {}) end)
         end
@@ -1565,10 +1599,11 @@ SupportedGames[10126164619] = {
             if HUB.dead or not autoQueue then return end
             local pg = LocalPlayer:FindFirstChild("PlayerGui")
             if not pg then return end
+            if mogBusy or inSessionNow(pg) then return end   -- searching or mid-match -> never requeue
             local now = os.clock()
-            if now < nextQueueAt then return end       -- throttle so we don't double-queue
-            if inLobby(pg) and fireQueue(queueMode) then
-                nextQueueAt = now + 3                   -- give the server time to open the queue UI
+            if now < nextQueueAt then return end
+            if fireQueue(queueMode) then
+                nextQueueAt = now + 5     -- cooldown until MoggingSearchStarted flips mogBusy
             end
         end))
 
@@ -1655,7 +1690,7 @@ SupportedGames[10126164619] = {
             end
             return best
         end
-        -- an exercise is doable only if it isn't resting AND has a free machine
+        -- an exercise is doable only if it isn't resting AND has a d machine
         local function pickAvailable(startIdx)
             for off = 0, #FARM_EXERCISES - 1 do
                 local idx = (startIdx - 1 + off) % #FARM_EXERCISES + 1
