@@ -1890,17 +1890,17 @@ SupportedGames[10126164619] = {
                         pcall(function() GymWorkout:RequestExit("AutoFarm") end)
                     else
                         -- nothing doable (every exercise resting or every machine taken)
-                        -- -> run on a treadmill and bail the instant one opens back up
+                        -- -> run on the BEST body-level treadmill, bail the instant one opens
                         pcall(function() GymWorkout:RequestExit("AutoFarm") end)
-                        local runwayModel = nearestModel("Level1Treadmill")  -- no body-level gate
-                        local runway = runwayModel and runwayModel:FindFirstChild("Runway", true)
+                        treadTarget = nil                  -- force a fresh best-treadmill pick
                         local tEnd = os.clock() + 35
                         while not HUB.dead and farmActive and os.clock() < tEnd do
-                            local hrp = GetHRP()
-                            if hrp and runway then hrp.CFrame = CFrame.new(runway.Position + Vector3.new(0, 3, 0)) end
+                            driveTreadmill()               -- best treadmill, direct-drive (suppress + SendTreadmillZoneState)
                             if pickAvailable(farmIndex) then break end   -- an exercise freed up
-                            task.wait(1)
+                            task.wait(0.1)
                         end
+                        restoreGameTread()                 -- hand detection back when leaving
+                        treadTarget = nil
                     end
                 end
             end
@@ -1926,22 +1926,6 @@ SupportedGames[10126164619] = {
             Callback = function(v)
                 autoMog = v
                 Notify("Auto Mog", "Battle solver " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
-            end,
-        })
-        AutoClickSub:AddToggle({
-            Name = "Gym Auto Farm", Default = false, Flag = "ac_gym",
-            Description = "Perfect reps; auto-runs the best treadmill when fatigued, then resumes",
-            Callback = function(v)
-                autoGym = v
-                if not v then                       -- release any treadmill hold
-                    treadTarget = nil
-                    restoreGameTread()
-                end
-                if v then
-                    Notify("Gym Farm", "Enabled — reps + " .. pickTreadmill() .. " when tired (lvl " .. bodyLevel() .. ")", "Success", 3)
-                else
-                    Notify("Gym Farm", "Disabled", "Error")
-                end
             end,
         })
         AutoClickSub:AddSlider({
