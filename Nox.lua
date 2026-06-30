@@ -2260,6 +2260,12 @@ function HUB.Unload()
     if HUB.dead then return end
     HUB.dead = true
     flying = false; noclip = false; following = false; aim.enabled = false
+    silent.enabled = false
+    pcall(function()
+        if SAInst then
+            if SAInst.disable then SAInst:disable() else SAInst.Enabled = false end
+        end
+    end)
     if getgenv and getgenv().NoxAim then getgenv().NoxAim.enabled = false end
     pcall(function() if flyConn then flyConn:Disconnect() end end)
     pcall(function() if noclipConn then noclipConn:Disconnect() end end)
