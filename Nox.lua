@@ -1298,20 +1298,74 @@ local silent = {
     range    = 1000,
     minRange = 0,
     headOnly = false,
+    wallbang = false, -- pierce walls + lock targets through geometry
 }
 local DEFAULT_BONES = { "Head", "UpperTorso", "LowerTorso" }
+local WALLBANG_ATTR = "Wallbangable"
 
-local function findSilentAimModule()
-    local node = LocalPlayer:FindFirstChild("PlayerScripts")
-    for _, name in ipairs({ "Client", "Handicap", "Systems", "SilentAim" }) do
+local function findByPath(root, ...)
+    local node = root
+    for _, name in ipairs({ ... }) do
         if not node then return nil end
         node = node:FindFirstChild(name)
     end
     return node
 end
 
-local SAModule = findSilentAimModule()
+local function safeRequire(inst)
+    if not inst then return nil end
+    local ok, mod = pcall(require, inst)
+    if ok then return mod end
+    return nil
+end
+
+local SAModule = findByPath(LocalPlayer:FindFirstChild("PlayerScripts"), "Client", "Handicap", "Systems", "SilentAim")
 local SAClass, SAInst
+
+-- Sibling modules used to rebuild target selection without the visibility gate.
+local rf       = game:GetService("ReplicatedFirst")
+local FOVUtil  = safeRequire(findByPath(rf, "Sakura", "Util", "FOVUtil"))
+local TargetU  = safeRequire(findByPath(LocalPlayer:FindFirstChild("PlayerScripts"), "Client", "Handicap", "TargetUtil"))
+
+-- Replace SilentAim:_findBestTarget so that, when Wall Bang is on, the line-of-
+-- sight test is skipped and enemies behind walls become valid lock targets.
+-- When Wall Bang is off it falls straight through to the original method, so
+-- normal silent aim behaviour is untouched.
+local function installWallbangPatch()
+    if not SAClass or SAClass.__noxPatched then return end
+    if not (FOVUtil and TargetU) then return end
+    local orig = SAClass._findBestTarget
+    SAClass._findBestTarget = function(self, originPos, camCF)
+        if not silent.wallbang then
+            return orig(self, originPos, camCF)
+        end
+        if self.EffectiveFOV <= 0 then return nil, nil end
+        local bestScore, bestPos, bestInst = math.huge, nil, nil
+        for _, t in TargetU:getValidTargets() do
+            local inst = t.Instance
+            local mag = (inst:GetPivot().Position - originPos).Magnitude
+            if self.Range >= mag then
+                local capFov = self:getDistanceCappedFOV(mag) / 2
+                for _, boneName in self.TargetBones do
+                    local bone = inst:FindFirstChild(boneName)
+                    if bone and bone:IsA("BasePart") then
+                        local pos = bone.Position
+                        local d = (pos - originPos).Magnitude
+                        if d >= self.MinRange and self.Range >= d then
+                            local ang = math.max(0, FOVUtil:calculateAngle(camCF, pos)
+                                - self:_getAngularRadius(bone.Size, d) * 0.85)
+                            if ang <= capFov and ang < bestScore then
+                                bestInst, bestPos, bestScore = inst, pos, ang
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return bestPos, bestInst
+    end
+    SAClass.__noxPatched = true
+end
 
 local function ensureSilent()
     if not SAModule then return nil end
@@ -1319,6 +1373,7 @@ local function ensureSilent()
         local ok, cls = pcall(require, SAModule)
         if ok then SAClass = cls else return nil end
     end
+    installWallbangPatch()
     if not SAInst and SAClass.getInstance then
         local ok, inst = pcall(function() return SAClass:getInstance() end)
         if ok then SAInst = inst end
@@ -1330,7 +1385,17 @@ local function ensureSilent()
     return SAInst
 end
 
+local function applyWallbang()
+    -- A negative Wallbangable on Workspace is inherited by every part via the
+    -- weapon's ancestor walk, so any bullet penetrates any geometry. Cleared
+    -- when disabled so the world goes back to normal.
+    pcall(function()
+        Workspace:SetAttribute(WALLBANG_ATTR, silent.wallbang and -1e9 or nil)
+    end)
+end
+
 local function applySilent()
+    applyWallbang()
     local inst = ensureSilent()
     if not inst then return end
     inst.MaxFOV        = silent.fov
@@ -1359,7 +1424,7 @@ else
     SilentSub:AddSection("Silent Aim — Raycast")
     SilentSub:AddParagraph({
         Title = "Raycast method",
-        Content = "Bends every shot's bullet raycast onto the closest visible enemy inside the FOV. No camera movement, no aim snap — just fire your weapon and it locks. Walls still block (the bullet has to reach the target).",
+        Content = "Bends every shot's bullet raycast onto the closest enemy inside the FOV. No camera movement, no aim snap — just fire and it locks. Turn on Wall Bang below to also shoot through walls and target enemies behind cover.",
     })
     SilentSub:AddToggle({
         Name = "Enabled", Default = false, Flag = "silent_enabled",
@@ -1386,6 +1451,17 @@ else
         Name = "Headshot Only", Default = false, Flag = "silent_head",
         Description = "Lock the ray onto heads only",
         Callback = function(v) silent.headOnly = v; applySilent() end,
+    })
+
+    SilentSub:AddSection("Wall Bang")
+    SilentSub:AddToggle({
+        Name = "Bullets Through Walls", Default = false, Flag = "silent_wallbang",
+        Description = "Pierce all geometry and lock onto enemies behind walls",
+        Callback = function(v)
+            silent.wallbang = v
+            applySilent()
+            Notify("Silent Aim", v and "Wallbang ON — shots pierce walls" or "Wallbang OFF", v and "Success" or "Error")
+        end,
     })
 
     -- Re-assert our settings each frame so the game's own handicap controller
@@ -2261,6 +2337,8 @@ function HUB.Unload()
     HUB.dead = true
     flying = false; noclip = false; following = false; aim.enabled = false
     silent.enabled = false
+    silent.wallbang = false
+    pcall(function() Workspace:SetAttribute(WALLBANG_ATTR, nil) end)
     pcall(function()
         if SAInst then
             if SAInst.disable then SAInst:disable() else SAInst.Enabled = false end
