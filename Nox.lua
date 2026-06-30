@@ -1481,9 +1481,11 @@ SupportedGames[10126164619] = {
         end
 
         local function driveClickSpam(pg)
-            -- spam-circle minigame: instant click = Perfect
+            -- spam-circle minigame: instant click = Perfect. Only scan the
+            -- Mogging GUI subtree (and only if present) instead of all PlayerGui.
             local mog = pg:FindFirstChild("Mogging")
-            for _, d in ipairs((mog or pg):GetDescendants()) do
+            if not mog then return end
+            for _, d in ipairs(mog:GetDescendants()) do
                 if d.Name == "ActiveClickMinigameButton" and d:IsA("GuiButton") then
                     fireActivated(d)
                 end
