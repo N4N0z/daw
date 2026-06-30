@@ -901,6 +901,24 @@ end
 
 track(RunService.RenderStepped:Connect(function()
     if HUB.dead then return end
+
+    local anyDraw = esp.box or esp.name or esp.distance or esp.health or esp.healthText
+        or esp.tool or esp.tracer or esp.skeleton or esp.hat or esp.arrow or esp.look
+        or esp.halo or esp.headCircle or esp.ring
+    F.anyDraw = anyDraw
+
+    -- Nothing to render → hide once, then idle. Avoids all per-frame work
+    -- (viewport math, GetHRP, per-entity loop) when ESP is off or empty.
+    if not (esp.enabled and (anyDraw or esp.chams)) then
+        if not F.allHidden then
+            for _, obj in pairs(espObjects) do hideObj(obj) end
+            for _, obj in pairs(npcObjects) do hideObj(obj) end
+            F.allHidden = true
+        end
+        return
+    end
+    F.allHidden = false
+
     F.myHRP = GetHRP()
     F.baseCol = baseColorNow()
     F.vp = Camera.ViewportSize
@@ -911,21 +929,13 @@ track(RunService.RenderStepped:Connect(function()
     elseif esp.tracerOrigin == "Mouse" then
         local m = UserInputService:GetMouseLocation(); F.tracerFrom = Vector2.new(m.X, m.Y)
     end
-    F.anyDraw = esp.box or esp.name or esp.distance or esp.health or esp.healthText
-        or esp.tool or esp.tracer or esp.skeleton or esp.hat or esp.arrow or esp.look
-        or esp.halo or esp.headCircle or esp.ring
 
-    if esp.enabled then
-        for player, obj in pairs(espObjects) do
-            renderEntity(obj, player.Character, player.DisplayName, true, player)
-        end
-        for model, obj in pairs(npcObjects) do
-            if model.Parent then renderEntity(obj, model, model.Name, false, nil)
-            else hideObj(obj) end
-        end
-    else
-        for _, obj in pairs(espObjects) do hideObj(obj) end
-        for _, obj in pairs(npcObjects) do hideObj(obj) end
+    for player, obj in pairs(espObjects) do
+        renderEntity(obj, player.Character, player.DisplayName, true, player)
+    end
+    for model, obj in pairs(npcObjects) do
+        if model.Parent then renderEntity(obj, model, model.Name, false, nil)
+        else hideObj(obj) end
     end
 end))
 
