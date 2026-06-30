@@ -1608,6 +1608,47 @@ SupportedGames[10126164619] = {
             Callback = function(v) barClicks = v end,
         })
 
+        local QueueSub = GameTab:AddSubTab("Auto Queue")
+        QueueSub:AddSection("Matchmaking")
+        if not canFire() then
+            QueueSub:AddParagraph({
+                Title = "Unavailable",
+                Text = "Couldn't reach the matchmaking remote (ReplicatedStorage.Shared.Lib.F). Auto Queue won't work on this build.",
+            })
+        end
+        local function setMode(v) queueMode = (v == "2v2") and "2v2" or "1v1" end
+        local modeDropdown = QueueSub:AddDropdown({
+            Name = "Mode", Options = { "1v1", "2v2" }, Default = "1v1", Flag = "mog_queue_mode",
+            Callback = setMode,
+        })
+        registerResync(modeDropdown, setMode)
+        QueueSub:AddToggle({
+            Name = "Auto Queue", Default = false, Flag = "mog_autoqueue",
+            Description = "Re-queues automatically whenever you land back in the lobby",
+            Callback = function(v)
+                autoQueue = v
+                Notify("Auto Queue", v and ("Queuing " .. queueMode .. " matches") or "Disabled", v and "Success" or "Error")
+            end,
+        })
+        QueueSub:AddButton({
+            Name = "Queue Now", Primary = true,
+            Callback = function()
+                local ok = fireQueue(queueMode)
+                Notify("Auto Queue", ok and ("Queued " .. queueMode) or "Remote unavailable", ok and "Success" or "Error")
+            end,
+        })
+        QueueSub:AddButton({
+            Name = "Leave Queue",
+            Callback = function()
+                leaveQueue()
+                Notify("Auto Queue", "Left queue", "Info")
+            end,
+        })
+        QueueSub:AddParagraph({
+            Title = "Full AFK farm",
+            Text = "Enable Auto Queue here plus 'Auto Mog Battle' on the Auto Click tab: it queues, the solver wins the match, then it queues again. 2v2 may need a squad depending on the game's rules.",
+        })
+
         -- focus this tab on load so the game's cheats are front-and-center
         pcall(function() Window:_selectTab(GameTab) end)
     end,
