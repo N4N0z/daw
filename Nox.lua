@@ -1272,18 +1272,21 @@ AimSub:AddColorPicker({
     Callback = function(c) aim.fovColor = c end,
 })
 
--- ── Silent Aim (universal hit-detection hook) ───────────────────────────────
+-- ── Silent Aim (targeted function hooks — low overhead, no recursion) ───────
 local SilentSub = CombatTab:AddSubTab("Silent Aim")
 
-local SILENT_HOOKS = type(hookmetamethod) == "function"
-    and type(getnamecallmethod) == "function"
-    and type(newcclosure) == "function"
+local SILENT_HOOKS = type(hookfunction) == "function" and type(newcclosure) == "function"
 
--- Neutralize any hook from an older (buggy) build still living in getgenv.
-if getgenv and getgenv().NoxSilent then pcall(function() getgenv().NoxSilent.enabled = false end) end
+-- Neutralize any GLOBAL __namecall hooks left by earlier builds this session
+-- (those tax every call and caused the lag/freeze). We only use targeted hooks.
+if getgenv then
+    local g = getgenv()
+    if g.NoxSilent then pcall(function() g.NoxSilent.enabled = false end) end
+    if g.NoxSilentCfg then pcall(function() g.NoxSilentCfg.enabled = false end) end
+end
 
--- Persistent config so re-running the hub never re-hooks the metatable.
-local SILENT = (getgenv and getgenv().NoxSilentCfg) or {
+-- Persistent config so re-running the hub never re-hooks.
+local SILENT = (getgenv and getgenv().NoxAim) or {
     enabled = false, fov = 150, part = "Head",
     teamCheck = false, aliveCheck = true,
     hold = true,        -- only act while holding Right-Click (protects movement)
@@ -1291,7 +1294,7 @@ local SILENT = (getgenv and getgenv().NoxSilentCfg) or {
     raycast = false,    -- redirect camera-origin Raycasts toward the target
 }
 SILENT.enabled = false  -- always start disabled on (re)load
-if getgenv then getgenv().NoxSilentCfg = SILENT end
+if getgenv then getgenv().NoxAim = SILENT end
 
 local function isCharPart(inst)
     if typeof(inst) ~= "Instance" or not inst:IsA("BasePart") then return false end
@@ -1330,16 +1333,13 @@ local function silentTarget()
     return best
 end
 
--- The per-call processor. Redefined on every reload so logic is hot-swappable
--- WITHOUT re-hooking (avoids needing a rejoin to pick up fixes). It only runs
--- while NoxSilentBusy is set, so the internal namecalls it makes pass straight
--- through the hook instead of recursing. Returns (changed, packedArgs).
+-- Per-call processor (hot-swappable each reload). Returns (changed, packedArgs).
 if getgenv then
-    getgenv().NoxSilentFn = function(self, method, args)
+    getgenv().NoxAimProc = function(method, self, args)
         if SILENT.hold and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
             return false
         end
-        if SILENT.remote and (method == "FireServer" or method == "InvokeServer") then
+        if method == "FireServer" or method == "InvokeServer" then
             local target = silentTarget()
             if not target then return false end
             local changed = false
@@ -1352,7 +1352,7 @@ if getgenv then
                 end
             end
             return changed, args
-        elseif SILENT.raycast and method == "Raycast" then
+        elseif method == "Raycast" then
             local origin, dir = args[1], args[2]
             local cam = Workspace.CurrentCamera
             if typeof(origin) == "Vector3" and typeof(dir) == "Vector3" and cam
@@ -1361,71 +1361,63 @@ if getgenv then
                 if target then args[2] = (target.Position - origin).Unit * dir.Magnitude; return true, args end
             end
             return false
-        elseif SILENT.raycast and (method == "FindPartOnRayWithIgnoreList"
-            or method == "FindPartOnRayWithWhitelist" or method == "FindPartOnRay") then
-            local ray = args[1]
-            local cam = Workspace.CurrentCamera
-            if typeof(ray) == "Ray" and cam and (ray.Origin - cam.CFrame.Position).Magnitude < 14 then
-                local target = silentTarget()
-                if target then
-                    args[1] = Ray.new(ray.Origin, (target.Position - ray.Origin).Unit * ray.Direction.Magnitude)
-                    return true, args
-                end
-            end
-            return false
         end
         return false
     end
 end
 
--- Install the dispatch hook exactly once. It does almost nothing on the hot
--- path: a few table reads + string compares; the heavy work only happens for
--- actual hit-detection calls, guarded against re-entry.
-if SILENT_HOOKS and getgenv and not getgenv().NoxSilentHookV2 then
-    getgenv().NoxSilentHookV2 = true
-    getgenv().NoxSilentBusy = false
+-- Install targeted hooks once. These fire ONLY on the named calls, so there's
+-- no per-frame namecall tax and no recursion (internal calls aren't hooked).
+if SILENT_HOOKS and getgenv and not getgenv().NoxAimHook then
+    getgenv().NoxAimHook = true
     local G = getgenv()
-    local old
-    old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-        if G.NoxSilentBusy then return old(self, ...) end
-        local cfg = G.NoxSilentCfg
-        if not (cfg and cfg.enabled) then return old(self, ...) end
-        if checkcaller() then return old(self, ...) end
-        local method = getnamecallmethod()
-        local isFire = (method == "FireServer" or method == "InvokeServer")
-        local isRay  = (method == "Raycast" or method == "FindPartOnRayWithIgnoreList"
-            or method == "FindPartOnRayWithWhitelist" or method == "FindPartOnRay")
-        if not ((cfg.remote and isFire) or (cfg.raycast and isRay)) then
-            return old(self, ...)
-        end
-        local fn = G.NoxSilentFn
-        if not fn then return old(self, ...) end
-        G.NoxSilentBusy = true
-        local ok, changed, packed = pcall(fn, self, method, table.pack(...))
-        G.NoxSilentBusy = false
-        if ok and changed and packed then
-            return old(self, table.unpack(packed, 1, packed.n))
-        end
-        return old(self, ...)
-    end))
+    G.NoxAimBusy = false
+
+    local function wrap(origFn, methodName, modeKey)
+        if type(origFn) ~= "function" then return end
+        local hooked
+        hooked = hookfunction(origFn, newcclosure(function(self, ...)
+            if G.NoxAimBusy then return hooked(self, ...) end
+            local cfg = G.NoxAim
+            if not (cfg and cfg.enabled and cfg[modeKey]) then return hooked(self, ...) end
+            if type(checkcaller) == "function" and checkcaller() then return hooked(self, ...) end
+            local proc = G.NoxAimProc
+            if not proc then return hooked(self, ...) end
+            G.NoxAimBusy = true
+            local ok, changed, packed = pcall(proc, methodName, self, table.pack(...))
+            G.NoxAimBusy = false
+            if ok and changed and packed then
+                return hooked(self, table.unpack(packed, 1, packed.n))
+            end
+            return hooked(self, ...)
+        end))
+    end
+
+    pcall(function()
+        local re = Instance.new("RemoteEvent"); wrap(re.FireServer, "FireServer", "remote"); re:Destroy()
+    end)
+    pcall(function()
+        local rf = Instance.new("RemoteFunction"); wrap(rf.InvokeServer, "InvokeServer", "remote"); rf:Destroy()
+    end)
+    pcall(function() wrap(Workspace.Raycast, "Raycast", "raycast") end)
 end
 
 SilentSub:AddSection("Silent Aim")
 if not SILENT_HOOKS then
     SilentSub:AddParagraph({
         Title = "Unsupported Executor",
-        Text = "Silent Aim needs hookmetamethod + getnamecallmethod. Your executor doesn't expose them.",
+        Text = "Silent Aim needs hookfunction. Your executor doesn't expose it.",
     })
 end
 SilentSub:AddParagraph({
     Title = "How it works",
-    Text = "Redirects the game's hit detection to the closest target near your crosshair. Keep 'Only While Aiming' on so it never touches normal movement.",
+    Text = "Hooks only the shooting calls (FireServer / Raycast) and redirects them to the closest target near your crosshair — no per-frame lag. Keep 'Only While Aiming' on so normal play is untouched.",
 })
 SilentSub:AddToggle({
     Name = "Enabled", Default = false, Flag = "silent_enabled",
     Callback = function(v)
         SILENT.enabled = v and SILENT_HOOKS
-        if v and not SILENT_HOOKS then Notify("Silent Aim", "Executor lacks hook functions", "Error", 4)
+        if v and not SILENT_HOOKS then Notify("Silent Aim", "Executor lacks hookfunction", "Error", 4)
         else Notify("Silent Aim", v and "Enabled" or "Disabled", v and "Success" or "Error") end
     end,
 })
