@@ -1279,22 +1279,28 @@ local SILENT_HOOKS = type(hookmetamethod) == "function"
     and type(getnamecallmethod) == "function"
     and type(newcclosure) == "function"
 
--- Persistent settings table so re-running the hub never re-hooks the metatable.
-local SILENT = (getgenv and getgenv().NoxSilent) or {
+-- Neutralize any hook from an older (buggy) build still living in getgenv.
+if getgenv and getgenv().NoxSilent then pcall(function() getgenv().NoxSilent.enabled = false end) end
+
+-- Persistent config so re-running the hub never re-hooks the metatable.
+local SILENT = (getgenv and getgenv().NoxSilentCfg) or {
     enabled = false, fov = 150, part = "Head",
     teamCheck = false, aliveCheck = true,
     hold = true,        -- only act while holding Right-Click (protects movement)
     remote = true,      -- rewrite Vector3/CFrame/part args in FireServer/InvokeServer
     raycast = false,    -- redirect camera-origin Raycasts toward the target
 }
-if getgenv then getgenv().NoxSilent = SILENT end
+SILENT.enabled = false  -- always start disabled on (re)load
+if getgenv then getgenv().NoxSilentCfg = SILENT end
 
-local function silentActive()
-    if not SILENT.enabled then return false end
-    if SILENT.hold then
-        return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+local function isCharPart(inst)
+    if typeof(inst) ~= "Instance" or not inst:IsA("BasePart") then return false end
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl ~= Players.LocalPlayer and pl.Character and inst:IsDescendantOf(pl.Character) then
+            return true
+        end
     end
-    return true
+    return false
 end
 
 local function silentTarget()
@@ -1324,63 +1330,83 @@ local function silentTarget()
     return best
 end
 
--- Install the metatable hook exactly once per session.
-if SILENT_HOOKS and getgenv and not getgenv().NoxSilentHooked then
-    getgenv().NoxSilentHooked = true
-
-    local function isCharPart(inst)
-        if typeof(inst) ~= "Instance" or not inst:IsA("BasePart") then return false end
-        for _, pl in ipairs(Players:GetPlayers()) do
-            if pl ~= Players.LocalPlayer and pl.Character and inst:IsDescendantOf(pl.Character) then
-                return true
+-- The per-call processor. Redefined on every reload so logic is hot-swappable
+-- WITHOUT re-hooking (avoids needing a rejoin to pick up fixes). It only runs
+-- while NoxSilentBusy is set, so the internal namecalls it makes pass straight
+-- through the hook instead of recursing. Returns (changed, packedArgs).
+if getgenv then
+    getgenv().NoxSilentFn = function(self, method, args)
+        if SILENT.hold and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+            return false
+        end
+        if SILENT.remote and (method == "FireServer" or method == "InvokeServer") then
+            local target = silentTarget()
+            if not target then return false end
+            local changed = false
+            for i = 1, args.n do
+                local v = args[i]
+                local t = typeof(v)
+                if t == "Vector3" then args[i] = target.Position; changed = true
+                elseif t == "CFrame" then args[i] = CFrame.new(target.Position); changed = true
+                elseif t == "Instance" and isCharPart(v) then args[i] = target; changed = true
+                end
             end
+            return changed, args
+        elseif SILENT.raycast and method == "Raycast" then
+            local origin, dir = args[1], args[2]
+            local cam = Workspace.CurrentCamera
+            if typeof(origin) == "Vector3" and typeof(dir) == "Vector3" and cam
+                and (origin - cam.CFrame.Position).Magnitude < 14 then
+                local target = silentTarget()
+                if target then args[2] = (target.Position - origin).Unit * dir.Magnitude; return true, args end
+            end
+            return false
+        elseif SILENT.raycast and (method == "FindPartOnRayWithIgnoreList"
+            or method == "FindPartOnRayWithWhitelist" or method == "FindPartOnRay") then
+            local ray = args[1]
+            local cam = Workspace.CurrentCamera
+            if typeof(ray) == "Ray" and cam and (ray.Origin - cam.CFrame.Position).Magnitude < 14 then
+                local target = silentTarget()
+                if target then
+                    args[1] = Ray.new(ray.Origin, (target.Position - ray.Origin).Unit * ray.Direction.Magnitude)
+                    return true, args
+                end
+            end
+            return false
         end
         return false
     end
+end
 
-    local oldNamecall
-    oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-        if silentActive() and not checkcaller() then
-            local method = getnamecallmethod()
-            if SILENT.remote and (method == "FireServer" or method == "InvokeServer") then
-                local target = silentTarget()
-                if target then
-                    local args = table.pack(...)
-                    local changed = false
-                    for i = 1, args.n do
-                        local v = args[i]
-                        local t = typeof(v)
-                        if t == "Vector3" then args[i] = target.Position; changed = true
-                        elseif t == "CFrame" then args[i] = CFrame.new(target.Position); changed = true
-                        elseif t == "Instance" and isCharPart(v) then args[i] = target; changed = true
-                        end
-                    end
-                    if changed then return oldNamecall(self, table.unpack(args, 1, args.n)) end
-                end
-            elseif SILENT.raycast and method == "Raycast" then
-                local origin, dir = ...
-                if typeof(origin) == "Vector3" and typeof(dir) == "Vector3"
-                    and (origin - Workspace.CurrentCamera.CFrame.Position).Magnitude < 12 then
-                    local target = silentTarget()
-                    if target then
-                        return oldNamecall(self, origin, (target.Position - origin).Unit * dir.Magnitude, (select(3, ...)))
-                    end
-                end
-            elseif SILENT.raycast and (method == "FindPartOnRayWithIgnoreList"
-                or method == "FindPartOnRayWithWhitelist" or method == "FindPartOnRay") then
-                local ray = ...
-                if typeof(ray) == "Ray"
-                    and (ray.Origin - Workspace.CurrentCamera.CFrame.Position).Magnitude < 12 then
-                    local target = silentTarget()
-                    if target then
-                        local rest = table.pack(select(2, ...))
-                        local newRay = Ray.new(ray.Origin, (target.Position - ray.Origin).Unit * ray.Direction.Magnitude)
-                        return oldNamecall(self, newRay, table.unpack(rest, 1, rest.n))
-                    end
-                end
-            end
+-- Install the dispatch hook exactly once. It does almost nothing on the hot
+-- path: a few table reads + string compares; the heavy work only happens for
+-- actual hit-detection calls, guarded against re-entry.
+if SILENT_HOOKS and getgenv and not getgenv().NoxSilentHookV2 then
+    getgenv().NoxSilentHookV2 = true
+    getgenv().NoxSilentBusy = false
+    local G = getgenv()
+    local old
+    old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+        if G.NoxSilentBusy then return old(self, ...) end
+        local cfg = G.NoxSilentCfg
+        if not (cfg and cfg.enabled) then return old(self, ...) end
+        if checkcaller() then return old(self, ...) end
+        local method = getnamecallmethod()
+        local isFire = (method == "FireServer" or method == "InvokeServer")
+        local isRay  = (method == "Raycast" or method == "FindPartOnRayWithIgnoreList"
+            or method == "FindPartOnRayWithWhitelist" or method == "FindPartOnRay")
+        if not ((cfg.remote and isFire) or (cfg.raycast and isRay)) then
+            return old(self, ...)
         end
-        return oldNamecall(self, ...)
+        local fn = G.NoxSilentFn
+        if not fn then return old(self, ...) end
+        G.NoxSilentBusy = true
+        local ok, changed, packed = pcall(fn, self, method, table.pack(...))
+        G.NoxSilentBusy = false
+        if ok and changed and packed then
+            return old(self, table.unpack(packed, 1, packed.n))
+        end
+        return old(self, ...)
     end))
 end
 
@@ -1393,7 +1419,7 @@ if not SILENT_HOOKS then
 end
 SilentSub:AddParagraph({
     Title = "How it works",
-    Text = "Redirects the game's hit detection to the closest target near your crosshair. Universal, but exact behavior depends on the game. Keep 'Only While Aiming' on to protect normal movement.",
+    Text = "Redirects the game's hit detection to the closest target near your crosshair. Keep 'Only While Aiming' on so it never touches normal movement.",
 })
 SilentSub:AddToggle({
     Name = "Enabled", Default = false, Flag = "silent_enabled",
