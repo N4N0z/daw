@@ -1302,6 +1302,7 @@ local silent = {
 }
 local DEFAULT_BONES = { "Head", "UpperTorso", "LowerTorso" }
 local WALLBANG_ATTR = "Wallbangable"
+local WALLBANG_THRESHOLD = 1e9   -- beats every wall's own Wallbangable value
 
 local function findByPath(root, ...)
     local node = root
@@ -1319,102 +1320,105 @@ local function safeRequire(inst)
     return nil
 end
 
-local SAModule = findByPath(LocalPlayer:FindFirstChild("PlayerScripts"), "Client", "Handicap", "Systems", "SilentAim")
-local SAClass, SAInst
+-- IMPORTANT: the Sakura framework loads modules by requiring the ORIGINALS under
+-- StarterPlayer.StarterPlayerScripts.Client (see SakuraBootstrapper), NOT the
+-- per-player copies under PlayerScripts. Requiring the PlayerScripts copies gives
+-- a second, dead instance the game never consults. Always use the StarterPlayer
+-- originals so we touch the live singletons the weapon code actually reads.
+local rf  = game:GetService("ReplicatedFirst")
+local sps = findByPath(game:GetService("StarterPlayer"), "StarterPlayerScripts")
 
--- Sibling modules used to rebuild target selection without the visibility gate.
-local rf       = game:GetService("ReplicatedFirst")
+local SAClass  = safeRequire(findByPath(sps, "Client", "Handicap", "Systems", "SilentAim"))
 local FOVUtil  = safeRequire(findByPath(rf, "Sakura", "Util", "FOVUtil"))
-local TargetU  = safeRequire(findByPath(LocalPlayer:FindFirstChild("PlayerScripts"), "Client", "Handicap", "TargetUtil"))
+local VisUtil  = safeRequire(findByPath(rf, "Sakura", "Util", "VisibilityUtil"))
+local TargetU  = safeRequire(findByPath(sps, "Client", "Handicap", "TargetUtil"))
+local WeaponC  = safeRequire(findByPath(sps, "Client", "Weapon", "WeaponClient"))
 
--- Replace SilentAim:_findBestTarget so that, when Wall Bang is on, the line-of-
--- sight test is skipped and enemies behind walls become valid lock targets.
--- When Wall Bang is off it falls straight through to the original method, so
--- normal silent aim behaviour is untouched.
-local function installWallbangPatch()
-    if not SAClass or SAClass.__noxPatched then return end
-    if not (FOVUtil and TargetU) then return end
-    local orig = SAClass._findBestTarget
-    SAClass._findBestTarget = function(self, originPos, camCF)
-        if not silent.wallbang then
-            return orig(self, originPos, camCF)
-        end
-        if self.EffectiveFOV <= 0 then return nil, nil end
-        local bestScore, bestPos, bestInst = math.huge, nil, nil
-        for _, t in TargetU:getValidTargets() do
-            local inst = t.Instance
-            local mag = (inst:GetPivot().Position - originPos).Magnitude
-            if self.Range >= mag then
-                local capFov = self:getDistanceCappedFOV(mag) / 2
-                for _, boneName in self.TargetBones do
-                    local bone = inst:FindFirstChild(boneName)
-                    if bone and bone:IsA("BasePart") then
-                        local pos = bone.Position
-                        local d = (pos - originPos).Magnitude
-                        if d >= self.MinRange and self.Range >= d then
-                            local ang = math.max(0, FOVUtil:calculateAngle(camCF, pos)
-                                - self:_getAngularRadius(bone.Size, d) * 0.85)
-                            if ang <= capFov and ang < bestScore then
-                                bestInst, bestPos, bestScore = inst, pos, ang
-                            end
+local SUPPORTED = SAClass and FOVUtil and TargetU
+
+-- Pick the best lock target ourselves using our own FOV/range, optionally
+-- skipping the line-of-sight test for wall bang.
+local function pickTarget(camCF)
+    local origin = camCF.Position
+    local bones  = silent.headOnly and { "Head" } or DEFAULT_BONES
+    local visParams = (not silent.wallbang) and TargetU:getRaycastParams() or nil
+    local best, bestScore = nil, math.huge
+    for _, t in TargetU:getValidTargets() do
+        local inst = t.Instance
+        for _, boneName in ipairs(bones) do
+            local bone = inst:FindFirstChild(boneName)
+            if bone and bone:IsA("BasePart") then
+                local pos = bone.Position
+                local d = (pos - origin).Magnitude
+                if d <= silent.range and d >= silent.minRange then
+                    local ang = FOVUtil:calculateAngle(camCF, pos)
+                    if ang <= silent.fov / 2 and ang < bestScore then
+                        if silent.wallbang or not VisUtil
+                            or VisUtil:isPositionVisible(origin, pos, visParams) then
+                            best, bestScore = pos, ang
                         end
                     end
                 end
             end
         end
-        return bestPos, bestInst
     end
-    SAClass.__noxPatched = true
+    return best
 end
 
-local function ensureSilent()
-    if not SAModule then return nil end
-    if not SAClass then
-        local ok, cls = pcall(require, SAModule)
-        if ok then SAClass = cls else return nil end
+-- Replace SilentAim:getPivotCFrame on the class. WeaponAttack_FireBullet calls
+-- getInstance():getPivotCFrame(camera) every shot and aims the bullet ray down
+-- whatever CFrame we return. Overriding the method (not the instance flags) means
+-- the game's handicap controller toggling Enabled / zeroing the FOV can't fight us.
+local function installOverride()
+    if not SUPPORTED or SAClass.__noxOverride then return end
+    local realPivot = SAClass.getPivotCFrame
+    SAClass.getPivotCFrame = function(self, camCF)
+        if not silent.enabled then return realPivot(self, camCF) end
+        local pos = pickTarget(camCF)
+        if pos then return CFrame.lookAt(camCF.Position, pos) end
+        return nil   -- no target -> normal shot
     end
-    installWallbangPatch()
-    if not SAInst and SAClass.getInstance then
-        local ok, inst = pcall(function() return SAClass:getInstance() end)
-        if ok then SAInst = inst end
-    end
-    if not SAInst and SAClass.new then
-        local ok, inst = pcall(SAClass.new)
-        if ok then SAInst = inst end
-    end
-    return SAInst
+    SAClass.__noxOverride = true
+end
+
+-- Make sure a singleton exists so getInstance() is non-nil and the fire path
+-- actually calls getPivotCFrame.
+local function ensureInstance()
+    if not SAClass then return end
+    local inst = SAClass.getInstance and SAClass:getInstance()
+    if not inst and SAClass.new then pcall(SAClass.new) end
 end
 
 local function applyWallbang()
-    -- A negative Wallbangable on Workspace is inherited by every part via the
-    -- weapon's ancestor walk, so any bullet penetrates any geometry. Cleared
-    -- when disabled so the world goes back to normal.
+    -- 1) Workspace attr covers parts that have no Wallbangable of their own (the
+    --    weapon walks ancestors until it finds one, reaching Workspace).
+    -- 2) Walls DO carry their own Wallbangable (drywall=1, concrete/steel=2...),
+    --    found before Workspace, so we also raise the equipped weapon's
+    --    WallbangThreshold above all of them to force penetration.
     pcall(function()
         Workspace:SetAttribute(WALLBANG_ATTR, silent.wallbang and -1e9 or nil)
     end)
-end
-
-local function applySilent()
-    applyWallbang()
-    local inst = ensureSilent()
-    if not inst then return end
-    inst.MaxFOV        = silent.fov
-    inst.MaxRadius     = 1e9            -- disable the distance-based FOV cap
-    inst.Range         = silent.range
-    inst.MinRange      = silent.minRange
-    inst.HandicapFactor = 1
-    inst.PlatformScale  = 1
-    inst.TargetBones    = silent.headOnly and { "Head" } or DEFAULT_BONES
-    pcall(function() inst:_recalculateEffectiveFOV() end)
-    inst.EffectiveFOV   = silent.fov
-    if silent.enabled then
-        if inst.enable then inst:enable() else inst.Enabled = true end
-    else
-        if inst.disable then inst:disable() else inst.Enabled = false end
+    if WeaponC then
+        local cw = WeaponC.CurrentWeapon
+        if cw then
+            if silent.wallbang then
+                if cw.__noxOldWB == nil then cw.__noxOldWB = cw.WallbangThreshold or 0 end
+                cw.WallbangThreshold = WALLBANG_THRESHOLD
+            elseif cw.__noxOldWB ~= nil then
+                cw.WallbangThreshold = cw.__noxOldWB
+                cw.__noxOldWB = nil
+            end
+        end
     end
 end
 
-if not SAModule then
+local function applySilent()
+    installOverride()
+    if silent.enabled then ensureInstance() end
+    applyWallbang()
+end
+
+if not SUPPORTED then
     SilentSub:AddSection("Silent Aim — Raycast")
     SilentSub:AddParagraph({
         Title = "Unavailable",
@@ -1424,7 +1428,7 @@ else
     SilentSub:AddSection("Silent Aim — Raycast")
     SilentSub:AddParagraph({
         Title = "Raycast method",
-        Content = "Bends every shot's bullet raycast onto the closest enemy inside the FOV. No camera movement, no aim snap — just fire and it locks. Turn on Wall Bang below to also shoot through walls and target enemies behind cover.",
+        Content = "Redirects every shot's bullet ray onto the closest enemy inside the FOV. No camera movement — just fire and it locks. Turn on Wall Bang below to shoot through walls and lock enemies behind cover.",
     })
     SilentSub:AddToggle({
         Name = "Enabled", Default = false, Flag = "silent_enabled",
@@ -1437,20 +1441,20 @@ else
     SilentSub:AddSlider({
         Name = "FOV", Min = 1, Max = 360, Default = 360, Suffix = "°", Flag = "silent_fov",
         Description = "Angular cone the lock searches inside",
-        Callback = function(v) silent.fov = v; applySilent() end,
+        Callback = function(v) silent.fov = v end,
     })
     SilentSub:AddSlider({
         Name = "Range", Min = 50, Max = 5000, Default = 1000, Suffix = "", Flag = "silent_range",
-        Callback = function(v) silent.range = v; applySilent() end,
+        Callback = function(v) silent.range = v end,
     })
     SilentSub:AddSlider({
         Name = "Min Range", Min = 0, Max = 50, Default = 0, Suffix = "", Flag = "silent_minrange",
-        Callback = function(v) silent.minRange = v; applySilent() end,
+        Callback = function(v) silent.minRange = v end,
     })
     SilentSub:AddToggle({
         Name = "Headshot Only", Default = false, Flag = "silent_head",
         Description = "Lock the ray onto heads only",
-        Callback = function(v) silent.headOnly = v; applySilent() end,
+        Callback = function(v) silent.headOnly = v end,
     })
 
     SilentSub:AddSection("Wall Bang")
@@ -1464,17 +1468,15 @@ else
         end,
     })
 
-    -- Re-assert our settings each frame so the game's own handicap controller
-    -- can't quietly disable the module or zero the FOV out from under us.
+    installOverride()
+
+    -- Keep the singleton alive (the game may destroy it for mouse players) and,
+    -- while wall bang is on, keep raising the currently-equipped weapon's
+    -- threshold so it survives weapon switches.
     track(RunService.Heartbeat:Connect(function()
-        if HUB.dead or not silent.enabled then return end
-        local inst = SAInst
-        if not inst then inst = ensureSilent() end
-        if not inst then return end
-        if not inst.Enabled then if inst.enable then inst:enable() else inst.Enabled = true end end
-        inst.HandicapFactor = 1
-        inst.PlatformScale  = 1
-        inst.EffectiveFOV   = silent.fov
+        if HUB.dead then return end
+        if silent.enabled then ensureInstance() end
+        if silent.wallbang then applyWallbang() end
     end))
 end
 
@@ -2340,8 +2342,15 @@ function HUB.Unload()
     silent.wallbang = false
     pcall(function() Workspace:SetAttribute(WALLBANG_ATTR, nil) end)
     pcall(function()
-        if SAInst then
-            if SAInst.disable then SAInst:disable() else SAInst.Enabled = false end
+        if WeaponC and WeaponC.CurrentWeapon and WeaponC.CurrentWeapon.__noxOldWB ~= nil then
+            WeaponC.CurrentWeapon.WallbangThreshold = WeaponC.CurrentWeapon.__noxOldWB
+            WeaponC.CurrentWeapon.__noxOldWB = nil
+        end
+    end)
+    pcall(function()
+        if SAClass and SAClass.getInstance then
+            local i = SAClass:getInstance()
+            if i and i.disable then i:disable() end
         end
     end)
     if getgenv and getgenv().NoxAim then getgenv().NoxAim.enabled = false end
