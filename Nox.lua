@@ -1347,6 +1347,7 @@ SupportedGames[10126164619] = {
             { name = "Level1Treadmill", req = 1 },
         }
         local treadTarget, treadName, lastTreadScan = nil, nil, 0
+        local treadModel, treadZonePart, gameTreadOff = nil, nil, false
         local function bodyLevel()
             -- The HUD "Body Level: N" label is populated from the initial profile
             -- sync, so it's correct right after joining (unlike LastKnownBodyLevel,
@@ -1371,35 +1372,68 @@ SupportedGames[10126164619] = {
             end
             return "Level1Treadmill"
         end
-        local function nearestTreadZone(name)
+        local function nearestTread(name)
+            -- returns BOTH the treadmill model and its zone part, so we can
+            -- direct-drive the server (SendTreadmillZoneState needs the model).
             local gym = Workspace:FindFirstChild("Gym")
             local hrp = GetHRP()
-            if not gym or not hrp then return nil end
-            local best, bestD
+            if not gym or not hrp then return nil, nil end
+            local bestM, bestZ, bestD
             for _, d in ipairs(gym:GetDescendants()) do
                 if d:IsA("Model") and d.Name == name then
                     local zp = d:FindFirstChild("Runway", true) or d:FindFirstChildWhichIsA("BasePart", true)
                     if zp then
                         local dist = (hrp.Position - zp.Position).Magnitude
-                        if not bestD or dist < bestD then bestD, best = dist, zp end
+                        if not bestD or dist < bestD then bestD, bestM, bestZ = dist, d, zp end
                     end
                 end
             end
-            return best
+            return bestM, bestZ
         end
+
+        -- Kill the game's own nearest-treadmill detection so it can't pick a
+        -- closer BASIC treadmill out from under us. We re-assert the chosen
+        -- (best) zone every frame via SendTreadmillZoneState instead.
+        local function suppressGameTread()
+            if gameTreadOff then return end
+            pcall(function()
+                if GymWork and GymWork.TreadmillZoneConnection then
+                    GymWork.TreadmillZoneConnection:Disconnect()
+                    GymWork.TreadmillZoneConnection = nil
+                end
+            end)
+            gameTreadOff = true
+        end
+        local function restoreGameTread()
+            if not gameTreadOff then return end
+            pcall(function()
+                if GymWork and GymWork.StartTreadmillZoneDetection then
+                    GymWork:StartTreadmillZoneDetection()
+                end
+            end)
+            gameTreadOff = false
+        end
+
         local function driveTreadmill()
             local now = os.clock()
             -- re-pick / re-locate at most once a second (handles level-ups & moving)
             if not treadTarget or (now - lastTreadScan) > 1 then
                 lastTreadScan = now
                 local name = pickTreadmill()
-                local zp = nearestTreadZone(name)
-                if zp then treadName = name; treadTarget = zp.Position + Vector3.new(0, 3, 0)
-                else treadTarget = nil end
+                local m, zp = nearestTread(name)
+                if m and zp then
+                    treadName, treadModel, treadZonePart = name, m, zp
+                    treadTarget = zp.Position + Vector3.new(0, 3, 0)
+                else
+                    treadModel, treadZonePart, treadTarget = nil, nil, nil
+                end
             end
-            if treadTarget then
+            if treadTarget and treadZonePart and treadModel then
+                suppressGameTread()                      -- block the game's basic-treadmill pick
                 local hrp = GetHRP()
                 if hrp then hrp.CFrame = CFrame.new(treadTarget) end
+                -- force-report OUR chosen best treadmill to the server every frame
+                pcall(function() GymWork:SendTreadmillZoneState(treadZonePart, treadModel) end)
             end
         end
 
@@ -1551,6 +1585,7 @@ SupportedGames[10126164619] = {
             local repRunning = (GymClick and GymClick.Running == true) or (GymDrag and GymDrag.Running == true)
             if repRunning and ratio < 0.95 then
                 -- fresh & on a machine: remember the spot and bank Perfect reps
+                restoreGameTread(); treadTarget = nil
                 local hrp = GetHRP(); if hrp then repSpot = hrp.CFrame end
                 driveGymClick()
                 driveGymDrag()
@@ -1559,6 +1594,7 @@ SupportedGames[10126164619] = {
                 driveTreadmill()
             elseif repSpot then
                 -- recovered and off the treadmill: head back to the machine
+                restoreGameTread(); treadTarget = nil
                 local hrp = GetHRP(); if hrp then hrp.CFrame = repSpot end
             end
         end
@@ -1897,7 +1933,10 @@ SupportedGames[10126164619] = {
             Description = "Perfect reps; auto-runs the best treadmill when fatigued, then resumes",
             Callback = function(v)
                 autoGym = v
-                if not v then treadTarget = nil end   -- release any treadmill hold
+                if not v then                       -- release any treadmill hold
+                    treadTarget = nil
+                    restoreGameTread()
+                end
                 if v then
                     Notify("Gym Farm", "Enabled — reps + " .. pickTreadmill() .. " when tired (lvl " .. bodyLevel() .. ")", "Success", 3)
                 else
