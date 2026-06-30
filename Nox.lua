@@ -1282,6 +1282,126 @@ AimSub:AddColorPicker({
     Callback = function(c) aim.fovColor = c end,
 })
 
+-- ── Silent Aim (raycast method) ─────────────────────────────────────────────
+-- KILLSTREAK ships an internal aim-assist module at
+-- PlayerScripts.Client.Handicap.Systems.SilentAim. The weapon fire code
+-- (WeaponAttack_FireBullet) asks SilentAim:getInstance():getPivotCFrame(camera)
+-- every shot and, when it returns a CFrame, casts the bullet RAY down that
+-- vector instead of the camera's. So enabling + widening that singleton bends
+-- each shot's raycast onto the closest visible enemy. The server trusts the
+-- client's raycast, so it's a true silent lock with NO camera movement.
+local SilentSub = CombatTab:AddSubTab("Silent Aim")
+
+local silent = {
+    enabled  = false,
+    fov      = 360,   -- angular FOV in degrees (360 = whole screen)
+    range    = 1000,
+    minRange = 0,
+    headOnly = false,
+}
+local DEFAULT_BONES = { "Head", "UpperTorso", "LowerTorso" }
+
+local function findSilentAimModule()
+    local node = LocalPlayer:FindFirstChild("PlayerScripts")
+    for _, name in ipairs({ "Client", "Handicap", "Systems", "SilentAim" }) do
+        if not node then return nil end
+        node = node:FindFirstChild(name)
+    end
+    return node
+end
+
+local SAModule = findSilentAimModule()
+local SAClass, SAInst
+
+local function ensureSilent()
+    if not SAModule then return nil end
+    if not SAClass then
+        local ok, cls = pcall(require, SAModule)
+        if ok then SAClass = cls else return nil end
+    end
+    if not SAInst and SAClass.getInstance then
+        local ok, inst = pcall(function() return SAClass:getInstance() end)
+        if ok then SAInst = inst end
+    end
+    if not SAInst and SAClass.new then
+        local ok, inst = pcall(SAClass.new)
+        if ok then SAInst = inst end
+    end
+    return SAInst
+end
+
+local function applySilent()
+    local inst = ensureSilent()
+    if not inst then return end
+    inst.MaxFOV        = silent.fov
+    inst.MaxRadius     = 1e9            -- disable the distance-based FOV cap
+    inst.Range         = silent.range
+    inst.MinRange      = silent.minRange
+    inst.HandicapFactor = 1
+    inst.PlatformScale  = 1
+    inst.TargetBones    = silent.headOnly and { "Head" } or DEFAULT_BONES
+    pcall(function() inst:_recalculateEffectiveFOV() end)
+    inst.EffectiveFOV   = silent.fov
+    if silent.enabled then
+        if inst.enable then inst:enable() else inst.Enabled = true end
+    else
+        if inst.disable then inst:disable() else inst.Enabled = false end
+    end
+end
+
+if not SAModule then
+    SilentSub:AddSection("Silent Aim — Raycast")
+    SilentSub:AddParagraph({
+        Title = "Unavailable",
+        Content = "This game has no internal raycast aim module. Use the Aimbot tab instead.",
+    })
+else
+    SilentSub:AddSection("Silent Aim — Raycast")
+    SilentSub:AddParagraph({
+        Title = "Raycast method",
+        Content = "Bends every shot's bullet raycast onto the closest visible enemy inside the FOV. No camera movement, no aim snap — just fire your weapon and it locks. Walls still block (the bullet has to reach the target).",
+    })
+    SilentSub:AddToggle({
+        Name = "Enabled", Default = false, Flag = "silent_enabled",
+        Callback = function(v)
+            silent.enabled = v
+            applySilent()
+            Notify("Silent Aim", v and "Enabled — fire to lock" or "Disabled", v and "Success" or "Error")
+        end,
+    })
+    SilentSub:AddSlider({
+        Name = "FOV", Min = 1, Max = 360, Default = 360, Suffix = "°", Flag = "silent_fov",
+        Description = "Angular cone the lock searches inside",
+        Callback = function(v) silent.fov = v; applySilent() end,
+    })
+    SilentSub:AddSlider({
+        Name = "Range", Min = 50, Max = 5000, Default = 1000, Suffix = "", Flag = "silent_range",
+        Callback = function(v) silent.range = v; applySilent() end,
+    })
+    SilentSub:AddSlider({
+        Name = "Min Range", Min = 0, Max = 50, Default = 0, Suffix = "", Flag = "silent_minrange",
+        Callback = function(v) silent.minRange = v; applySilent() end,
+    })
+    SilentSub:AddToggle({
+        Name = "Headshot Only", Default = false, Flag = "silent_head",
+        Description = "Lock the ray onto heads only",
+        Callback = function(v) silent.headOnly = v; applySilent() end,
+    })
+
+    -- Re-assert our settings each frame so the game's own handicap controller
+    -- can't quietly disable the module or zero the FOV out from under us.
+    track(RunService.Heartbeat:Connect(function()
+        if HUB.dead or not silent.enabled then return end
+        local inst = SAInst
+        if not inst then inst = ensureSilent() end
+        if not inst then return end
+        if not inst.Enabled then if inst.enable then inst:enable() else inst.Enabled = true end end
+        inst.HandicapFactor = 1
+        inst.PlatformScale  = 1
+        inst.EffectiveFOV   = silent.fov
+    end))
+end
+
 -- ════════════════════════════════════════════════════════════════════════════
 -- GAME SUPPORT FRAMEWORK
 -- The universal tabs above load in every game. Each entry in SupportedGames is
