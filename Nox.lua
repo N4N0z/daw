@@ -1654,8 +1654,6 @@ SupportedGames[10126164619] = {
             if not pg then return end
 
             if autoMog then solveMogBattle(pg) end   -- every mog-battle minigame
-
-            if autoGym then driveGymFarm() end   -- reps + auto-treadmill when fatigued
         end))
 
         -- ── Auto Queue ──────────────────────────────────────────────────────
