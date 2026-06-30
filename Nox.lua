@@ -1308,6 +1308,7 @@ SupportedGames[10126164619] = {
 
         local autoMog   = false   -- master: solve every mog-battle minigame
         local autoGym   = false   -- auto-complete every gym exercise (click + drag)
+        local autoTread = false   -- hold player on the best body-level treadmill
         local barClicks = 25      -- tug-of-war Activated fires per frame
 
         local function fireActivated(btn)
@@ -1328,6 +1329,62 @@ SupportedGames[10126164619] = {
             if ok and base then
                 pcall(function() GymClick = require(base.GymClickBarMinigame) end)
                 pcall(function() GymDrag  = require(base.GymDragBarMinigame) end)
+            end
+        end
+
+        -- Auto Treadmill: hold the player on the best treadmill their BODY LEVEL
+        -- unlocks. The server gates by level (and gates Golden/Rainbow by
+        -- gamepass, so those are excluded). Re-asserting HRP every frame beats
+        -- the server's position revert; the game's own zone detection (~14 studs)
+        -- then reports the treadmill and body XP accrues.
+        local GymCtrl
+        pcall(function() GymCtrl = require(LocalPlayer.PlayerScripts.Client.Controllers.GymController) end)
+        local TREADMILLS = {   -- best XP first; req = body level required
+            { name = "Level7Treadmill", req = 7 },
+            { name = "Level3Treadmill", req = 5 },
+            { name = "Level2Treadmill", req = 3 },
+            { name = "Level1Treadmill", req = 1 },
+        }
+        local treadTarget, treadName, lastTreadScan = nil, nil, 0
+        local function bodyLevel()
+            return (GymCtrl and tonumber(GymCtrl.LastKnownBodyLevel)) or 1
+        end
+        local function pickTreadmill()
+            local lvl = bodyLevel()
+            for _, t in ipairs(TREADMILLS) do
+                if lvl >= t.req then return t.name end
+            end
+            return "Level1Treadmill"
+        end
+        local function nearestTreadZone(name)
+            local gym = Workspace:FindFirstChild("Gym")
+            local hrp = GetHRP()
+            if not gym or not hrp then return nil end
+            local best, bestD
+            for _, d in ipairs(gym:GetDescendants()) do
+                if d:IsA("Model") and d.Name == name then
+                    local zp = d:FindFirstChild("Runway", true) or d:FindFirstChildWhichIsA("BasePart", true)
+                    if zp then
+                        local dist = (hrp.Position - zp.Position).Magnitude
+                        if not bestD or dist < bestD then bestD, best = dist, zp end
+                    end
+                end
+            end
+            return best
+        end
+        local function driveTreadmill()
+            local now = os.clock()
+            -- re-pick / re-locate at most once a second (handles level-ups & moving)
+            if not treadTarget or (now - lastTreadScan) > 1 then
+                lastTreadScan = now
+                local name = pickTreadmill()
+                local zp = nearestTreadZone(name)
+                if zp then treadName = name; treadTarget = zp.Position + Vector3.new(0, 3, 0)
+                else treadTarget = nil end
+            end
+            if treadTarget then
+                local hrp = GetHRP()
+                if hrp then hrp.CFrame = CFrame.new(treadTarget) end
             end
         end
 
@@ -1525,6 +1582,8 @@ SupportedGames[10126164619] = {
                 driveGymClick()   -- Bench Press, Squat (+ golden variants)
                 driveGymDrag()    -- Lat Pulldown, Curl (+ golden variants)
             end
+
+            if autoTread then driveTreadmill() end   -- AFK farm best unlocked treadmill
         end))
 
         -- ── Auto Queue ──────────────────────────────────────────────────────
@@ -1805,6 +1864,19 @@ SupportedGames[10126164619] = {
                 Notify("Auto Click", "Gym " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
             end,
         })
+        AutoClickSub:AddToggle({
+            Name = "Auto Treadmill", Default = false, Flag = "ac_tread",
+            Description = "AFK-farm the best treadmill your body level unlocks",
+            Callback = function(v)
+                autoTread = v
+                treadTarget = nil   -- release hold immediately when toggled off
+                if v then
+                    Notify("Treadmill", "Running " .. pickTreadmill() .. " (body lvl " .. bodyLevel() .. ")", "Success", 3)
+                else
+                    Notify("Treadmill", "Disabled", "Error")
+                end
+            end,
+        })
         AutoClickSub:AddSlider({
             Name = "Tug Click Rate", Min = 1, Max = 100, Default = 25, Suffix = "", Flag = "ac_barrate",
             Description = "Tug-of-war spam per frame",
@@ -1815,7 +1887,8 @@ SupportedGames[10126164619] = {
         QueueSub:AddSection("Matchmaking")
         if not canFire() then
             QueueSub:AddParagraph({
-                Title = "Unavailable",
+                Title = "Unavailable",l
+
                 Text = "Couldn't reach the matchmaking remote (ReplicatedStorage.Shared.Lib.F). Auto Queue won't work on this build.",
             })
         end
