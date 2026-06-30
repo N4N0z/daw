@@ -1574,34 +1574,28 @@ SupportedGames[10126164619] = {
 
         -- ── Auto Gym Farm ───────────────────────────────────────────────────
         -- A workout can ONLY be started by the machine's server-side ProximityPrompt
-        -- (there is no "start workout" remote). So we walk to a machine, hold its
+        -- (there is no "start workout" remote). So we walk to a FREE machine, hold its
         -- prompt (fireproximityprompt), then let the rep solver bank Perfect reps.
-        -- Fatigue is a SHARED pool (~8 reps + body level); when it's spent the server
-        -- fires "GymFatigueLimitReached" with .Remaining seconds. We rest by standing
-        -- on a treadmill Runway (the game auto-detects the zone and pays XP/sec) until
-        -- the pool resets, then rotate to the next exercise.
-        -- Verified live: all 4 machines start, server accepts reps, fatigue returns
-        -- Remaining=30, treadmill zone registers.
+        --
+        -- Two live data sources from GymMachineHighlightController drive the routing:
+        --   MachineClaims[GymMachineId] = { UserId, DisplayName }  -> who's on each machine
+        --   FatigueStates[ExerciseType] = { Exhausted, Remaining, ResetEndsAtClient, Limit }
+        -- Fatigue is PER-EXERCISE (maxing Bench doesn't block Squat/Lat/Curl), each has
+        -- its own ~30s reset, and the Limit scales with body level. So we: pick an
+        -- exercise that isn't resting AND has a machine nobody else is using, lift until
+        -- it exhausts, then move to the next available one. Only when ALL four are
+        -- unavailable (resting or taken) do we run on a treadmill, breaking out the
+        -- instant one frees up. Verified live: claims keyed by GymMachineId, per-exercise
+        -- FatigueStates with Exhausted/Remaining/ResetEndsAtClient, treadmill zone pays XP.
         local farmActive = false
-        local GymCtrl, GymWorkout
+        local GymCtrl, GymWorkout, GymHighlight
         do
             local ok1, c = pcall(function() return require(LocalPlayer.PlayerScripts.Client.Controllers.GymController) end)
             if ok1 then GymCtrl = c end
             local ok2, w = pcall(function() return require(LocalPlayer.PlayerScripts.Client.Controllers.Gym.GymWorkoutClient) end)
             if ok2 then GymWorkout = w end
-        end
-
-        local farmFatigueRemaining = nil
-        if F and type(F.ServerToClient) == "table" and type(F.ServerToClient.Listen) == "function" then
-            -- F.Listen APPENDS handlers (table.insert), so this runs alongside the
-            -- game's own listener without clobbering it.
-            pcall(function()
-                F.ServerToClient.Listen({
-                    GymFatigueLimitReached = function(p)
-                        if type(p) == "table" then farmFatigueRemaining = tonumber(p.Remaining) or 30 end
-                    end,
-                })
-            end)
+            local ok3, h = pcall(function() return require(LocalPlayer.PlayerScripts.Client.Controllers.Gym.GymMachineHighlightController) end)
+            if ok3 then GymHighlight = h end
         end
 
         local FARM_EXERCISES = { "BenchPress", "Squat", "LatPulldown", "Curl" }
@@ -1627,8 +1621,51 @@ SupportedGames[10126164619] = {
             return GymCtrl.InGym == true
         end
         local function inWorkoutNow()
-            if not GymCtrl then return false end
-            return GymCtrl.InWorkout == true
+            return GymCtrl ~= nil and GymCtrl.InWorkout == true
+        end
+        -- per-exercise cooldown (each exercise rests on its own ~30s timer)
+        local function exerciseResting(exType)
+            local fs = GymHighlight and GymHighlight.FatigueStates and GymHighlight.FatigueStates[exType]
+            if type(fs) ~= "table" then return false end
+            if fs.ResetEndsAtClient ~= nil then return (fs.ResetEndsAtClient - os.clock()) > 0 end
+            return fs.Exhausted == true
+        end
+        -- is this physical machine free (unclaimed, or claimed by us)?
+        local function machineFreeForMe(model)
+            local id = model:GetAttribute("GymMachineId")
+            if not id or not GymHighlight or type(GymHighlight.MachineClaims) ~= "table" then return true end
+            local claim = GymHighlight.MachineClaims[id]
+            if type(claim) ~= "table" or type(claim.UserId) ~= "number" then return true end
+            return claim.UserId == LocalPlayer.UserId
+        end
+        -- nearest machine of this exercise that nobody else is using
+        local function freeMachineFor(exType)
+            local gym = Workspace:FindFirstChild("Gym")
+            local hrp = GetHRP()
+            if not gym or not hrp then return nil end
+            local best, bestD
+            for _, c in ipairs(gym:GetChildren()) do
+                if c.Name == exType and machineFreeForMe(c) then
+                    local ok, pivot = pcall(function() return c:GetPivot().Position end)
+                    if ok then
+                        local d = (pivot - hrp.Position).Magnitude
+                        if not bestD or d < bestD then bestD = d; best = c end
+                    end
+                end
+            end
+            return best
+        end
+        -- an exercise is doable only if it isn't resting AND has a free machine
+        local function pickAvailable(startIdx)
+            for off = 0, #FARM_EXERCISES - 1 do
+                local idx = (startIdx - 1 + off) % #FARM_EXERCISES + 1
+                local ex = FARM_EXERCISES[idx]
+                if not exerciseResting(ex) then
+                    local m = freeMachineFor(ex)
+                    if m then return ex, m, idx end
+                end
+            end
+            return nil
         end
         local function startWorkoutAt(machine)
             local hrp = GetHRP(); if not hrp then return false end
@@ -1642,16 +1679,6 @@ SupportedGames[10126164619] = {
             local t0 = os.clock()
             repeat task.wait(0.1) until inWorkoutNow() or os.clock() - t0 > 4 or HUB.dead or not farmActive
             return inWorkoutNow()
-        end
-        local function restOnTreadmill(seconds)
-            local runwayModel = nearestModel("Level1Treadmill")  -- no body-level gate, always usable
-            local runway = runwayModel and runwayModel:FindFirstChild("Runway", true)
-            local tEnd = os.clock() + seconds
-            while not HUB.dead and farmActive and os.clock() < tEnd do
-                local hrp = GetHRP()
-                if hrp and runway then hrp.CFrame = CFrame.new(runway.Position + Vector3.new(0, 3, 0)) end
-                task.wait(0.4)                              -- the game self-reports the treadmill zone -> XP
-            end
         end
 
         local farmIndex = 1
@@ -1669,23 +1696,33 @@ SupportedGames[10126164619] = {
                     task.wait(1)
                 else
                     farmWarned = false
-                    farmFatigueRemaining = nil
-                    local exName = FARM_EXERCISES[farmIndex]
-                    farmIndex = farmIndex % #FARM_EXERCISES + 1
-                    local machine = nearestModel(exName)
-                    if machine and startWorkoutAt(machine) then
-                        -- bank Perfect reps until the shared fatigue pool is spent
-                        local t0 = os.clock()
-                        while not HUB.dead and farmActive and farmFatigueRemaining == nil
-                            and inWorkoutNow() and os.clock() - t0 < 40 do
-                            driveGymClick()   -- Bench / Squat
-                            driveGymDrag()    -- Lat Pulldown / Curl
-                            task.wait(0.08)
+                    local ex, machine, idx = pickAvailable(farmIndex)
+                    if ex and machine then
+                        farmIndex = idx % #FARM_EXERCISES + 1   -- next search starts after this one
+                        if startWorkoutAt(machine) then
+                            -- bank Perfect reps until THIS exercise hits its own limit
+                            local t0 = os.clock()
+                            while not HUB.dead and farmActive and inWorkoutNow()
+                                and not exerciseResting(ex) and os.clock() - t0 < 60 do
+                                driveGymClick()   -- Bench / Squat
+                                driveGymDrag()    -- Lat Pulldown / Curl
+                                task.wait(0.08)
+                            end
                         end
-                    end
-                    pcall(function() GymWorkout:RequestExit("AutoFarm") end)
-                    if farmActive and not HUB.dead then
-                        restOnTreadmill((farmFatigueRemaining or 4) + 2)   -- run while fatigue resets
+                        pcall(function() GymWorkout:RequestExit("AutoFarm") end)
+                    else
+                        -- nothing doable (every exercise resting or every machine taken)
+                        -- -> run on a treadmill and bail the instant one opens back up
+                        pcall(function() GymWorkout:RequestExit("AutoFarm") end)
+                        local runwayModel = nearestModel("Level1Treadmill")  -- no body-level gate
+                        local runway = runwayModel and runwayModel:FindFirstChild("Runway", true)
+                        local tEnd = os.clock() + 35
+                        while not HUB.dead and farmActive and os.clock() < tEnd do
+                            local hrp = GetHRP()
+                            if hrp and runway then hrp.CFrame = CFrame.new(runway.Position + Vector3.new(0, 3, 0)) end
+                            if pickAvailable(farmIndex) then break end   -- an exercise freed up
+                            task.wait(1)
+                        end
                     end
                 end
             end
@@ -1788,7 +1825,7 @@ SupportedGames[10126164619] = {
         })
         FarmSub:AddParagraph({
             Title = "How it works",
-            Text = "Enter the gym first. It walks to each machine, banks Perfect reps until you're fatigued, then runs on a Level 1 treadmill until the shared fatigue pool resets (~30s) and moves to the next exercise.",
+            Text = "Enter the gym first. It rotates bench/squat/lat/curl, only using a machine no one else is on, and skips any exercise that's resting. Each exercise rests on its own ~30s timer (limit scales with body level). When all four are resting or taken it runs on a treadmill, then jumps back the moment one frees up.",
         })
 
         -- focus this tab on load so the game's cheats are front-and-center
