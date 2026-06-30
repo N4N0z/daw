@@ -1768,6 +1768,29 @@ SupportedGames[10126164619] = {
             Text = "Enable Auto Queue here plus 'Auto Mog Battle' on the Auto Click tab: it queues, the solver wins the match, then it queues again. 2v2 may need a squad depending on the game's rules.",
         })
 
+        local FarmSub = GameTab:AddSubTab("Auto Farm")
+        FarmSub:AddSection("Gym Auto Farm")
+        if not (GymCtrl and GymWorkout and type(fireproximityprompt) == "function") then
+            FarmSub:AddParagraph({
+                Title = "Limited support",
+                Text = (type(fireproximityprompt) ~= "function")
+                    and "Your executor has no 'fireproximityprompt', so workouts can't be auto-started."
+                    or "Couldn't hook the gym controllers on this game build.",
+            })
+        end
+        FarmSub:AddToggle({
+            Name = "Auto Gym Farm", Default = false, Flag = "gym_autofarm",
+            Description = "Rotates bench/squat/lat/curl, runs on a treadmill while fatigued",
+            Callback = function(v)
+                farmActive = v
+                Notify("Auto Farm", v and "Farming: lift -> rest run -> repeat" or "Stopped", v and "Success" or "Error")
+            end,
+        })
+        FarmSub:AddParagraph({
+            Title = "How it works",
+            Text = "Enter the gym first. It walks to each machine, banks Perfect reps until you're fatigued, then runs on a Level 1 treadmill until the shared fatigue pool resets (~30s) and moves to the next exercise.",
+        })
+
         -- focus this tab on load so the game's cheats are front-and-center
         pcall(function() Window:_selectTab(GameTab) end)
     end,
