@@ -1515,6 +1515,63 @@ SupportedGames[10126164619] = {
             end
         end))
 
+        -- ── Auto Queue ──────────────────────────────────────────────────────
+        -- The whole matchmaking flow (MoggingController) collapses to one
+        -- client->server call:
+        --     F.ClientToServer.Fire("StartMogging", { Mode = "1v1"/"2v2", DeviceType })
+        -- and "CancelMoggingQueue" leaves the queue. State is readable from the
+        -- PlayerGui: "Matchmaking" is on while searching, "Session"/"Session2v2"
+        -- during a battle, "Conclusion"/"BossConclusion" right after. So we only
+        -- (re)fire when NONE of those are showing -> you're back in the lobby.
+        -- Pair with "Auto Mog Battle" for a hands-off farm: queue, solve, requeue.
+        local autoQueue, queueMode = false, "1v1"
+        local F
+        do
+            local ok, mod = pcall(function()
+                return require(game:GetService("ReplicatedStorage").Shared.Lib.F)
+            end)
+            if ok then F = mod end
+        end
+        local function canFire()
+            return F and type(F.ClientToServer) == "table" and type(F.ClientToServer.Fire) == "function"
+        end
+        local function deviceType()
+            if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then return "Touch" end
+            if UserInputService.GamepadEnabled and not UserInputService.KeyboardEnabled then return "Gamepad" end
+            return "KeyboardMouse"
+        end
+        local BUSY_GUIS = { "PreMatchmaking", "Matchmaking", "Session", "Session2v2", "Conclusion", "BossConclusion" }
+        local function inLobby(pg)
+            for _, name in ipairs(BUSY_GUIS) do
+                local g = pg:FindFirstChild(name)
+                if g and g.Enabled then return false end
+            end
+            return true
+        end
+        local function fireQueue(mode)
+            if not canFire() then return false end
+            pcall(function()
+                F.ClientToServer.Fire("StartMogging", { Mode = mode, DeviceType = deviceType() })
+            end)
+            return true
+        end
+        local function leaveQueue()
+            if not canFire() then return end
+            pcall(function() F.ClientToServer.Fire("CancelMoggingQueue", {}) end)
+        end
+
+        local nextQueueAt = 0
+        track(RunService.Heartbeat:Connect(function()
+            if HUB.dead or not autoQueue then return end
+            local pg = LocalPlayer:FindFirstChild("PlayerGui")
+            if not pg then return end
+            local now = os.clock()
+            if now < nextQueueAt then return end       -- throttle so we don't double-queue
+            if inLobby(pg) and fireQueue(queueMode) then
+                nextQueueAt = now + 3                   -- give the server time to open the queue UI
+            end
+        end))
+
         AutoClickSub:AddSection("Supported Game")
         AutoClickSub:AddParagraph({
             Title = "\u{2705} Looksmax & Mog",
