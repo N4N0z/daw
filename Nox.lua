@@ -1307,8 +1307,7 @@ SupportedGames[10126164619] = {
         local AutoClickSub = GameTab:AddSubTab("Auto Click")
 
         local autoMog   = false   -- master: solve every mog-battle minigame
-        local autoGym   = false   -- auto-complete every gym exercise (click + drag)
-        local autoTread = false   -- hold player on the best body-level treadmill
+        local autoGym   = false   -- reps + auto-treadmill when fatigued
         local barClicks = 25      -- tug-of-war Activated fires per frame
 
         local function fireActivated(btn)
@@ -1321,7 +1320,7 @@ SupportedGames[10126164619] = {
         -- the game itself drives). One handles Bench/Squat (ClickBar), the other
         -- LatPulldown/Curl (DragBar). Driving them directly = one toggle does
         -- ALL exercises with Perfect form, whatever machine you're on.
-        local GymClick, GymDrag
+        local GymClick, GymDrag, GymWork
         do
             local ok, base = pcall(function()
                 return LocalPlayer.PlayerScripts.Client.Controllers.Gym
@@ -1329,6 +1328,7 @@ SupportedGames[10126164619] = {
             if ok and base then
                 pcall(function() GymClick = require(base.GymClickBarMinigame) end)
                 pcall(function() GymDrag  = require(base.GymDragBarMinigame) end)
+                pcall(function() GymWork  = require(base.GymWorkoutClient) end)
             end
         end
 
@@ -1537,6 +1537,32 @@ SupportedGames[10126164619] = {
             end
         end
 
+        -- ONE merged gym farm: bank Perfect reps until fatigued, then run the
+        -- best body-level treadmill. It ALSO upgrades you to the best treadmill
+        -- whenever you're standing on any treadmill (so you never get stuck on
+        -- the basic one). `repSpot` remembers where you were repping.
+        local repSpot
+        local function onAnyTreadmill()
+            local k = GymWork and GymWork.CurrentTreadmillZoneKey
+            return type(k) == "string" and k ~= ""
+        end
+        local function driveGymFarm()
+            local ratio      = (GymWork and tonumber(GymWork.CurrentFatigueRatio)) or 0
+            local repRunning = (GymClick and GymClick.Running == true) or (GymDrag and GymDrag.Running == true)
+            if repRunning and ratio < 0.95 then
+                -- fresh & on a machine: remember the spot and bank Perfect reps
+                local hrp = GetHRP(); if hrp then repSpot = hrp.CFrame end
+                driveGymClick()
+                driveGymDrag()
+            elseif ratio >= 0.95 or onAnyTreadmill() then
+                -- fatigued, OR standing on ANY treadmill -> force the BEST one
+                driveTreadmill()
+            elseif repSpot then
+                -- recovered and off the treadmill: head back to the machine
+                local hrp = GetHRP(); if hrp then hrp.CFrame = repSpot end
+            end
+        end
+
         -- Mogging: targets are clones named "ActiveClickMinigameButton" with an
         -- .Activated handler that scores instantly. Fire them as they spawn.
         track(LocalPlayer:WaitForChild("PlayerGui").DescendantAdded:Connect(function(d)
@@ -1593,12 +1619,7 @@ SupportedGames[10126164619] = {
 
             if autoMog then solveMogBattle(pg) end   -- every mog-battle minigame
 
-            if autoGym then
-                driveGymClick()   -- Bench Press, Squat (+ golden variants)
-                driveGymDrag()    -- Lat Pulldown, Curl (+ golden variants)
-            end
-
-            if autoTread then driveTreadmill() end   -- AFK farm best unlocked treadmill
+            if autoGym then driveGymFarm() end   -- reps + auto-treadmill when fatigued
         end))
 
         -- ── Auto Queue ──────────────────────────────────────────────────────
@@ -1872,23 +1893,15 @@ SupportedGames[10126164619] = {
             end,
         })
         AutoClickSub:AddToggle({
-            Name = "Gym Auto Click", Default = false, Flag = "ac_gym",
-            Description = "All gym reps, Perfect form",
+            Name = "Gym Auto Farm", Default = false, Flag = "ac_gym",
+            Description = "Perfect reps; auto-runs the best treadmill when fatigued, then resumes",
             Callback = function(v)
                 autoGym = v
-                Notify("Auto Click", "Gym " .. (v and "enabled" or "disabled"), v and "Success" or "Error")
-            end,
-        })
-        AutoClickSub:AddToggle({
-            Name = "Auto Treadmill", Default = false, Flag = "ac_tread",
-            Description = "AFK-farm the best treadmill your body level unlocks",
-            Callback = function(v)
-                autoTread = v
-                treadTarget = nil   -- release hold immediately when toggled off
+                if not v then treadTarget = nil end   -- release any treadmill hold
                 if v then
-                    Notify("Treadmill", "Running " .. pickTreadmill() .. " (body lvl " .. bodyLevel() .. ")", "Success", 3)
+                    Notify("Gym Farm", "Enabled — reps + " .. pickTreadmill() .. " when tired (lvl " .. bodyLevel() .. ")", "Success", 3)
                 else
-                    Notify("Treadmill", "Disabled", "Error")
+                    Notify("Gym Farm", "Disabled", "Error")
                 end
             end,
         })
