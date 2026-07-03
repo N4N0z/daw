@@ -1480,13 +1480,8 @@ AimSub:AddToggle({
         Notify("Aimbot", v and "Enabled (hold Right-Click)" or "Disabled", v and "Success" or "Error")
     end,
 })
-    local expanded = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p == LocalPlayer then continue end
-        local char = p.Character
-        if not char then continue end
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hum or hum.Health <= 0 then continue end
+AimSub:AddSlider({
+    Name = "Smoothness", Min = 1, Max = 40, Default = 12, Suffix = "",
 
         for _, part in ipairs(char:GetChildren()) do
             if not part:IsA("BasePart") then continue end
