@@ -1466,10 +1466,9 @@ StickySub:AddColorPicker({
 })
 
 -- ── Hitbox Expander ─────────────────────────────────────────────────────────
--- Creates invisible overlay parts welded to enemy body parts. The overlays are
--- bigger but have no physics impact (Massless, CanCollide=false, no joints).
--- The weapon raycast (CanQuery) hits the overlay → registers as hitting the
--- parent part's ancestor model → DamageRequest works. Zero rig disruption.
+-- Creates invisible ANCHORED overlay parts that follow enemy body parts via
+-- CFrame updates each frame. Anchored = no physics assembly joining = no freeze.
+-- CanQuery=true so the weapon raycast hits the overlay and registers damage.
 local HitboxSub = CombatTab:AddSubTab("Hitbox")
 
 local hitbox = {
@@ -1478,7 +1477,8 @@ local hitbox = {
     headOnly   = false,
 }
 
-local hitboxOverlays = {}  -- [player] = { Part[] }
+local hitboxOverlays = {}  -- [player] = { {overlay=Part, source=Part}[] }
+local hitboxConn = nil     -- RenderStepped connection for CFrame updates
 
 local function expandChar(player)
     if player == LocalPlayer then return end
@@ -1486,7 +1486,7 @@ local function expandChar(player)
     if not char then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return end
-    if hitboxOverlays[player] then return end  -- already expanded
+    if hitboxOverlays[player] then return end
 
     local overlays = {}
     for _, part in ipairs(char:GetChildren()) do
@@ -1500,18 +1500,10 @@ local function expandChar(player)
             overlay.CanCollide = false
             overlay.CanQuery = true
             overlay.CanTouch = false
-            overlay.Massless = true
-            overlay.Anchored = false
+            overlay.Anchored = true       -- KEY: no physics assembly impact
             overlay.CFrame = part.CFrame
-
-            -- weld overlay to the real part so it follows movement
-            local weld = Instance.new("WeldConstraint")
-            weld.Part0 = part
-            weld.Part1 = overlay
-            weld.Parent = overlay
-
             overlay.Parent = char
-            table.insert(overlays, overlay)
+            table.insert(overlays, { overlay = overlay, source = part })
         end
     end
     hitboxOverlays[player] = overlays
@@ -1520,13 +1512,41 @@ end
 local function removeOverlays(player)
     local overlays = hitboxOverlays[player]
     if not overlays then return end
-    for _, ov in ipairs(overlays) do
-        if ov and ov.Parent then ov:Destroy() end
+    for _, entry in ipairs(overlays) do
+        if entry.overlay and entry.overlay.Parent then entry.overlay:Destroy() end
     end
     hitboxOverlays[player] = nil
 end
 
--- continuous loop: re-applies expansion to catch new players / respawns / resets
+-- CFrame update loop — moves all overlays to match their source parts
+local function startHitboxUpdate()
+    if hitboxConn then return end
+    hitboxConn = RunService.RenderStepped:Connect(function()
+        if HUB.dead then
+            if hitboxConn then hitboxConn:Disconnect(); hitboxConn = nil end
+            return
+        end
+        for player, overlays in pairs(hitboxOverlays) do
+            for i = #overlays, 1, -1 do
+                local entry = overlays[i]
+                if entry.source and entry.source.Parent and entry.overlay and entry.overlay.Parent then
+                    entry.overlay.CFrame = entry.source.CFrame
+                else
+                    -- source or overlay gone, clean up
+                    if entry.overlay and entry.overlay.Parent then entry.overlay:Destroy() end
+                    table.remove(overlays, i)
+                end
+            end
+        end
+    end)
+    track(hitboxConn)
+end
+
+local function stopHitboxUpdate()
+    if hitboxConn then hitboxConn:Disconnect(); hitboxConn = nil end
+end
+
+-- periodic check for new players / missed chars
 task.spawn(function()
     while true do
         if HUB.dead then return end
@@ -1537,7 +1557,7 @@ task.spawn(function()
                 end
             end
         end
-        task.wait(1)
+        task.wait(1.5)
     end
 end)
 
@@ -1545,7 +1565,7 @@ end)
 local function hookHitboxCharAdded(player)
     if player == LocalPlayer then return end
     track(player.CharacterAdded:Connect(function()
-        removeOverlays(player)  -- clear stale overlays
+        removeOverlays(player)
         task.wait(0.5)
         if hitbox.enabled and not HUB.dead then pcall(expandChar, player) end
     end))
@@ -1554,7 +1574,7 @@ for _, p in ipairs(Players:GetPlayers()) do hookHitboxCharAdded(p) end
 track(Players.PlayerAdded:Connect(function(p) hookHitboxCharAdded(p) end))
 track(Players.PlayerRemoving:Connect(function(p) removeOverlays(p) end))
 
--- re-expand after LOCAL player respawns (server re-streams enemies)
+-- re-expand after LOCAL player respawns
 track(LocalPlayer.CharacterAdded:Connect(function()
     task.wait(2)
     if not hitbox.enabled or HUB.dead then return end
@@ -1575,10 +1595,12 @@ HitboxSub:AddToggle({
             for _, p in ipairs(Players:GetPlayers()) do
                 if p ~= LocalPlayer then pcall(expandChar, p) end
             end
+            startHitboxUpdate()
         else
             for _, p in ipairs(Players:GetPlayers()) do
                 pcall(removeOverlays, p)
             end
+            stopHitboxUpdate()
         end
         Notify("Hitbox", v and "Expanded — enemies are bigger targets" or "Disabled (restored)", v and "Success" or "Error")
     end,
@@ -1589,7 +1611,6 @@ HitboxSub:AddSlider({
     Callback = function(v)
         hitbox.multiplier = v
         if hitbox.enabled then
-            -- rebuild overlays with new size
             for _, p in ipairs(Players:GetPlayers()) do
                 if p ~= LocalPlayer then
                     removeOverlays(p)
@@ -2808,8 +2829,9 @@ function HUB.Unload()
     flying = false; noclip = false; following = false; aim.enabled = false
     sticky.enabled = false; stickyTarget = nil
     -- restore hitboxes
-    for _, p in ipairs(Players:GetPlayers()) do pcall(restoreChar, p) end
+    for _, p in ipairs(Players:GetPlayers()) do pcall(removeOverlays, p) end
     hitbox.enabled = false
+    pcall(stopHitboxUpdate)
     silent.enabled = false
     silent.wallbang = false
     pcall(function() Workspace:SetAttribute(WALLBANG_ATTR, nil) end)
