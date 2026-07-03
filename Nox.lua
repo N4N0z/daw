@@ -1491,11 +1491,7 @@ AimSub:AddSlider({
 })
 
 local applyAimPart = function(v) aim.part = v end
--- any constraints. Let's test persistent expand with just Size changes.
-local hitboxExpandConn = nil
-local hitboxExpanded = {}  -- {part = origSize}
-
-local function expandAll()
+local aimPartDropdown = AimSub:AddDropdown({
     for _, p in ipairs(Players:GetPlayers()) do
         if p == LocalPlayer then continue end
         local char = p.Character
