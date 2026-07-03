@@ -1475,8 +1475,6 @@ AimSub:AddSection("Aimbot")
 AimSub:AddToggle({
     Name = "Enabled", Default = false, Flag = "aim_enabled",
     Callback = function(v)
-        aim.enabled = v
-local function pulseExpand()
     local expanded = {}
     for _, p in ipairs(Players:GetPlayers()) do
         if p == LocalPlayer then continue end
