@@ -1525,27 +1525,29 @@ local function findExpandedHit(origin, direction)
 end
 
 -- hook
-local hookMeta
-local function installRaycastHook()
-    if hookMeta then return end
+local hookInstalled = false
+local function installHitboxHook()
+    if hookInstalled then return end
 
     local mt = getrawmetatable(workspace)
-    if not mt then return end
+    if not mt then
+        Notify("Hitbox", "Can't hook — no metatable access", "Error", 4)
+        return
+    end
 
     local oldNamecall = mt.__namecall
-    local setReadonly = setreadonly or make_writeable or function() end
 
-    pcall(setReadonly, mt, false)
-
+    setreadonly(mt, false)
     mt.__namecall = newcclosure(function(self, ...)
         local method = getnamecallmethod()
         if method == "Raycast" and self == workspace and hitbox.enabled then
             local args = { ... }
             local origin = args[1]
             local direction = args[2]
+            local params = args[3]
 
             -- call original first
-            local result = originalRaycast(workspace, origin, direction, args[3])
+            local result = oldNamecall(self, ...)
 
             -- if we already hit an enemy, pass through
             if result and result.Instance then
@@ -1556,20 +1558,21 @@ local function installRaycastHook()
             end
 
             -- missed enemy — check if we WOULD hit with expanded hitboxes
-            local part, pos, normal = findExpandedHit(origin, direction)
-            if part then
-                -- create a fake RaycastResult-like by doing a raycast directly AT the part
-                -- from very close range to guarantee a hit on the actual body part
-                local dirToPart = (part.Position - origin).Unit
-                local closeOrigin = part.Position - dirToPart * 1
+            if origin and direction then
+                local part, pos, normal = findExpandedHit(origin, direction)
+                if part then
+                    -- fire a short raycast directly at the real body part
+                    local dirToPart = (part.Position - origin).Unit
+                    local closeOrigin = part.Position - dirToPart * 2
 
-                local params = RaycastParams.new()
-                params.FilterType = Enum.RaycastFilterType.Include
-                params.FilterDescendantsInstances = { part }
+                    local fakeParams = RaycastParams.new()
+                    fakeParams.FilterType = Enum.RaycastFilterType.Include
+                    fakeParams.FilterDescendantsInstances = { part }
 
-                local fakeResult = originalRaycast(workspace, closeOrigin, dirToPart * 3, params)
-                if fakeResult then
-                    return fakeResult
+                    local fakeResult = oldNamecall(workspace, closeOrigin, dirToPart * 5, fakeParams)
+                    if fakeResult then
+                        return fakeResult
+                    end
                 end
             end
 
@@ -1578,57 +1581,9 @@ local function installRaycastHook()
 
         return oldNamecall(self, ...)
     end)
+    setreadonly(mt, true)
 
-    pcall(setReadonly, mt, true)
-    hookMeta = true
-end
-
--- Alternative approach if namecall hooking isn't available: hookfunction
-local hookFn
-local function installRaycastHookFn()
-    if hookFn then return end
-    if not hookfunction then return end
-
-    local old
-    old = hookfunction(workspace.Raycast, newcclosure(function(self, origin, direction, params, ...)
-        if self == workspace and hitbox.enabled then
-            local result = old(self, origin, direction, params, ...)
-
-            -- if already hit enemy, pass
-            if result and result.Instance then
-                local model = result.Instance:FindFirstAncestorOfClass("Model")
-                if model and model:FindFirstChild("Humanoid") then
-                    return result
-                end
-            end
-
-            -- check expanded hitbox
-            local part, pos, normal = findExpandedHit(origin, direction)
-            if part then
-                local dirToPart = (part.Position - origin).Unit
-                local closeOrigin = part.Position - dirToPart * 1
-                local fakeParams = RaycastParams.new()
-                fakeParams.FilterType = Enum.RaycastFilterType.Include
-                fakeParams.FilterDescendantsInstances = { part }
-                local fakeResult = old(workspace, closeOrigin, dirToPart * 3, fakeParams)
-                if fakeResult then return fakeResult end
-            end
-
-            return result
-        end
-        return old(self, origin, direction, params, ...)
-    end))
-
-    hookFn = true
-end
-
--- try both methods
-local function installHitboxHook()
-    if hookfunction then
-        installRaycastHookFn()
-    else
-        installRaycastHook()
-    end
+    hookInstalled = true
 end
 
 HitboxSub:AddSection("Hitbox Expander")
