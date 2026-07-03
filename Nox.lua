@@ -1589,11 +1589,14 @@ HitboxSub:AddParagraph({
     Title = "How it works",
     Text = "Intercepts the weapon raycast — if a bullet misses but passes near an enemy (within expanded radius), it registers as a hit on their actual body part. No visible changes, no freezing.",
 })
+
+-- install hook immediately so it's always ready
+installHitboxHook()
+
 HitboxSub:AddToggle({
     Name = "Enabled", Default = false, Flag = "hitbox_enabled",
     Callback = function(v)
         hitbox.enabled = v
-        if v then installHitboxHook() end
         Notify("Hitbox", v and "Expanded — shots land if they pass close" or "Disabled", v and "Success" or "Error")
     end,
 })
