@@ -1655,6 +1655,122 @@ HitboxSub:AddToggle({
     Callback = function(v) hitbox.headOnly = v end,
 })
 
+-- Visual hitbox spheres (Highlight-based, no physics)
+local hitboxHighlights = {}  -- [player] = { Part[] }
+
+local function createHitboxVisuals()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == LocalPlayer then continue end
+        if hitboxHighlights[p] then continue end
+        local char = p.Character
+        if not char then continue end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
+
+        local spheres = {}
+        for _, part in ipairs(char:GetChildren()) do
+            if not part:IsA("BasePart") then continue end
+            if part.Name == "HumanoidRootPart" then continue end
+            if hitbox.headOnly and part.Name ~= "Head" then continue end
+
+            local sphere = Instance.new("Part")
+            sphere.Name = "_NoxHBVis"
+            sphere.Shape = Enum.PartType.Ball
+            sphere.Size = Vector3.new(1, 1, 1) * (part.Size.Magnitude * hitbox.multiplier)
+            sphere.Transparency = 0.75
+            sphere.Color = Color3.fromRGB(255, 0, 0)
+            sphere.Material = Enum.Material.ForceField
+            sphere.CanCollide = false
+            sphere.CanQuery = false  -- don't interfere with actual raycasts
+            sphere.CanTouch = false
+            sphere.Anchored = true
+            sphere.CFrame = part.CFrame
+            sphere.Parent = char
+            table.insert(spheres, { sphere = sphere, source = part })
+        end
+        hitboxHighlights[p] = spheres
+    end
+end
+
+local function removeHitboxVisuals()
+    for player, spheres in pairs(hitboxHighlights) do
+        for _, entry in ipairs(spheres) do
+            if entry.sphere and entry.sphere.Parent then entry.sphere:Destroy() end
+        end
+    end
+    hitboxHighlights = {}
+end
+
+local hitboxVisConn = nil
+
+local function startHitboxVis()
+    if hitboxVisConn then return end
+    createHitboxVisuals()
+    hitboxVisConn = RunService.RenderStepped:Connect(function()
+        if HUB.dead or not hitbox.showHitbox then
+            if hitboxVisConn then hitboxVisConn:Disconnect(); hitboxVisConn = nil end
+            removeHitboxVisuals()
+            return
+        end
+        -- update positions and catch new players
+        for player, spheres in pairs(hitboxHighlights) do
+            for i = #spheres, 1, -1 do
+                local entry = spheres[i]
+                if entry.source and entry.source.Parent and entry.sphere and entry.sphere.Parent then
+                    entry.sphere.CFrame = entry.source.CFrame
+                    entry.sphere.Size = Vector3.new(1, 1, 1) * (entry.source.Size.Magnitude * hitbox.multiplier)
+                else
+                    if entry.sphere and entry.sphere.Parent then entry.sphere:Destroy() end
+                    table.remove(spheres, i)
+                end
+            end
+        end
+        -- add new players that appeared
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and not hitboxHighlights[p] then
+                local char = p.Character
+                if char and char:FindFirstChildOfClass("Humanoid") then
+                    hitboxHighlights[p] = {}
+                    for _, part in ipairs(char:GetChildren()) do
+                        if not part:IsA("BasePart") then continue end
+                        if part.Name == "HumanoidRootPart" then continue end
+                        if hitbox.headOnly and part.Name ~= "Head" then continue end
+                        local sphere = Instance.new("Part")
+                        sphere.Name = "_NoxHBVis"
+                        sphere.Shape = Enum.PartType.Ball
+                        sphere.Size = Vector3.new(1, 1, 1) * (part.Size.Magnitude * hitbox.multiplier)
+                        sphere.Transparency = 0.75
+                        sphere.Color = Color3.fromRGB(255, 0, 0)
+                        sphere.Material = Enum.Material.ForceField
+                        sphere.CanCollide = false
+                        sphere.CanQuery = false
+                        sphere.CanTouch = false
+                        sphere.Anchored = true
+                        sphere.CFrame = part.CFrame
+                        sphere.Parent = char
+                        table.insert(hitboxHighlights[p], { sphere = sphere, source = part })
+                    end
+                end
+            end
+        end
+    end)
+    track(hitboxVisConn)
+end
+
+HitboxSub:AddToggle({
+    Name = "Show Hitboxes", Default = false, Flag = "hitbox_show",
+    Description = "Red spheres showing the expanded hit radius",
+    Callback = function(v)
+        hitbox.showHitbox = v
+        if v then
+            startHitboxVis()
+        else
+            if hitboxVisConn then hitboxVisConn:Disconnect(); hitboxVisConn = nil end
+            removeHitboxVisuals()
+        end
+    end,
+})
+
 AimSub:AddSection("Aimbot")
 AimSub:AddToggle({
     Name = "Enabled", Default = false, Flag = "aim_enabled",
