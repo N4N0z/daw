@@ -1516,30 +1516,65 @@ local function getClosestPartInExpandedFov()
     return bestPart
 end
 
--- Hook: when weapon fires "Process", we check for expanded hit and send DamageRequest
+-- Hook: when weapon fires "Process", check for expanded hit and send DamageRequest
 if not _G._NoxHitboxHooked2 then
-    local oldFire = WeaponsRemote.FireServer
-    WeaponsRemote.FireServer = newcclosure(function(self, action, ...)
-        local result = oldFire(self, action, ...)
-        -- after a "Process" (shot fired), check expanded hitbox
-        if action == "Process" then
-            local hb = _G._NoxHitbox
-            if hb and hb.enabled then
-                local part = getClosestPartInExpandedFov()
-                if part then
-                    local char = part:FindFirstAncestorOfClass("Model")
-                    local hum = char and char:FindFirstChild("Humanoid")
-                    if hum and hum.Health > 0 then
-                        -- fire damage request with the real body part
-                        task.defer(function()
-                            oldFire(WeaponsRemote, "DamageRequest", hum, nil, nil, part, part.Position)
-                        end)
-                    end
-                end
+    -- Use namecall hook on the Weapons remote specifically
+    local mt = getrawmetatable(WeaponsRemote)
+    -- Can't hook individual remotes via metatable. Instead, listen for Process
+    -- via a connection on a RenderStepped that detects shots fired.
+    -- Alternative: use the _G.FireBind the game itself exposes (line 85 of WeaponsClient)
+    
+    -- Simplest reliable approach: poll-based. On each shot frame, if mouse1 is
+    -- down and weapon is active, check expanded radius and fire DamageRequest.
+    -- We detect shots by listening to the Weapons remote OnClientEvent for our own
+    -- "RenderTracer" (which fires every shot we take).
+    
+    local lastShotTick = 0
+    track(WeaponsRemote.OnClientEvent:Connect(function(action, ...)
+        if HUB.dead then return end
+        if action ~= "RenderTracer" then return end
+        -- This fires for OTHER players' shots too. Check if it's from us by
+        -- examining the origin position being near our muzzle.
+        local hb = _G._NoxHitbox
+        if not hb or not hb.enabled then return end
+        
+        local now = os.clock()
+        if now - lastShotTick < 0.05 then return end -- debounce
+        lastShotTick = now
+        
+        -- args: tracerType, origin, endPos, hitData
+        local args = { ... }
+        local hitData = args[3]
+        -- If we already damaged someone, skip
+        if type(hitData) == "table" and hitData.Damaged == true then return end
+        
+        -- Check if the tracer origin is near our weapon muzzle
+        local myChar = GetCharacter()
+        if not myChar then return end
+        local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+        if not myHRP then return end
+        
+        local originStr = args[1]
+        if type(originStr) ~= "string" then return end
+        local ox, oy, oz = originStr:match("([%-%d%.]+),%s*([%-%d%.]+),%s*([%-%d%.]+)")
+        if not ox then return end
+        local shotOrigin = Vector3.new(tonumber(ox), tonumber(oy), tonumber(oz))
+        -- Only process our own shots (origin near us)
+        if (shotOrigin - myHRP.Position).Magnitude > 20 then return end
+        
+        -- Now check expanded hitbox
+        local part = getClosestPartInExpandedFov()
+        if part then
+            local char = part:FindFirstAncestorOfClass("Model")
+            local hum = char and char:FindFirstChild("Humanoid")
+            if hum and hum.Health > 0 then
+                task.defer(function()
+                    WeaponsRemote:FireServer("DamageRequest", hum, nil, nil, part, part.Position)
+                end)
             end
         end
-        return result
-    end)
+    end))
+    
     _G._NoxHitboxHooked2 = true
 end
 
