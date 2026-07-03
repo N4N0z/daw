@@ -1483,8 +1483,10 @@ _G._NoxHitbox = hitbox
 
 -- get the closest body part to a ray within expanded radius
 local function findExpandedHit(origin, direction)
+    local hb = _G._NoxHitbox
+    if not hb then return nil end
     local ray = Ray.new(origin, direction)
-    local bestPart, bestDist, bestPos, bestNormal = nil, math.huge, nil, nil
+    local bestPart, bestDist = nil, math.huge
 
     for _, p in ipairs(Players:GetPlayers()) do
         if p == LocalPlayer then continue end
@@ -1496,11 +1498,11 @@ local function findExpandedHit(origin, direction)
         for _, part in ipairs(char:GetChildren()) do
             if not part:IsA("BasePart") then continue end
             if part.Name == "HumanoidRootPart" then continue end
-            if hitbox.headOnly and part.Name ~= "Head" then continue end
+            if hb.headOnly and part.Name ~= "Head" then continue end
 
             -- expand the part's bounding sphere by multiplier
             local partPos = part.Position
-            local partRadius = part.Size.Magnitude * 0.5 * hitbox.multiplier
+            local partRadius = part.Size.Magnitude * 0.5 * hb.multiplier
 
             -- closest point on ray to part center
             local toCenter = partPos - origin
@@ -1515,14 +1517,13 @@ local function findExpandedHit(origin, direction)
             if dist <= partRadius and dist < bestDist then
                 bestDist = dist
                 bestPart = part
-                bestPos = partPos  -- hit position = part center (close enough)
-                bestNormal = (origin - partPos).Unit
             end
         end
     end
 
-    return bestPart, bestPos, bestNormal
+    return bestPart
 end
+_G._NoxFindExpandedHit = findExpandedHit
 
 -- hook
 local hookInstalled = false
@@ -1562,7 +1563,8 @@ local function installHitboxHook()
 
                 -- missed enemy — check if we WOULD hit with expanded hitboxes
                 if origin and direction then
-                    local part = findExpandedHit(origin, direction)
+                    local findFn = _G._NoxFindExpandedHit
+                    local part = findFn and findFn(origin, direction)
                     if part then
                         -- fire a short raycast directly at the real body part
                         local dirToPart = (part.Position - origin).Unit
