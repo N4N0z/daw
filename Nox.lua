@@ -1490,9 +1490,7 @@ AimSub:AddSlider({
     Callback = function(v) aim.fov = v end,
 })
 
--- Keep parts expanded while enabled. Re-apply every frame to fight server resets.
--- The key insight: the freeze only happened because we ALSO added welds/clones.
--- Pure Size change + CanCollide=false alone should NOT freeze if we don't add
+local applyAimPart = function(v) aim.part = v end
 -- any constraints. Let's test persistent expand with just Size changes.
 local hitboxExpandConn = nil
 local hitboxExpanded = {}  -- {part = origSize}
