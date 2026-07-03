@@ -1487,11 +1487,8 @@ AimSub:AddSlider({
 })
 AimSub:AddSlider({
     Name = "FOV (px)", Min = 30, Max = 600, Default = 150, Suffix = "", Flag = "aim_fov",
-        if entry.part and entry.part.Parent then
-            entry.part.Size = entry.orig
-        end
-    end
-end
+    Callback = function(v) aim.fov = v end,
+})
 
 -- Keep parts expanded while enabled. Re-apply every frame to fight server resets.
 -- The key insight: the freeze only happened because we ALSO added welds/clones.
