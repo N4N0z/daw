@@ -1479,8 +1479,6 @@ local hitbox = {
     showHitbox = false,
 }
 
-local originalRaycast = workspace.Raycast
-
 -- get the closest body part to a ray within expanded radius
 local function findExpandedHit(origin, direction)
     local ray = Ray.new(origin, direction)
