@@ -1465,6 +1465,156 @@ StickySub:AddColorPicker({
     Callback = function(c) sticky.fovColor = c end,
 })
 
+-- ── Hitbox Expander ─────────────────────────────────────────────────────────
+-- Scales enemy character parts on the client so the weapon raycast hits a much
+-- bigger target. Server doesn't validate part sizes — it only checks the
+-- humanoid reference and hit position are plausible.
+local HitboxSub = CombatTab:AddSubTab("Hitbox")
+
+local hitbox = {
+    enabled    = false,
+    multiplier = 3,
+    headOnly   = false,
+    visible    = false,   -- true = show expanded parts (red tint), false = transparent
+}
+
+local hitboxOriginals = {}  -- [player] = { [part] = originalSize }
+
+local function expandPlayer(player)
+    if player == LocalPlayer then return end
+    local char = player.Character
+    if not char then return end
+    if hitboxOriginals[player] then return end  -- already expanded
+
+    local saved = {}
+    for _, part in ipairs(char:GetChildren()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            if hitbox.headOnly and part.Name ~= "Head" then continue end
+            saved[part] = part.Size
+            part.Size = part.Size * hitbox.multiplier
+            if not hitbox.visible then
+                part.Transparency = 1
+                -- keep a visible clone at original size so the player looks normal
+                local visual = part:Clone()
+                visual.Name = "_NoxHitboxVisual"
+                visual.Size = saved[part]
+                visual.Transparency = part:GetAttribute("_NoxOrigTransparency") or 0
+                visual.CanCollide = false
+                visual.CanQuery = false
+                visual.Anchored = false
+                visual.Massless = true
+                local weld = Instance.new("WeldConstraint")
+                weld.Part0 = part
+                weld.Part1 = visual
+                weld.Parent = visual
+                visual.CFrame = part.CFrame
+                visual.Parent = char
+                part:SetAttribute("_NoxOrigTransparency", part:GetAttribute("_NoxOrigTransparency") or 0)
+            else
+                part.Color = Color3.fromRGB(255, 50, 50)
+                part.Material = Enum.Material.ForceField
+                part.Transparency = 0.6
+            end
+        end
+    end
+    hitboxOriginals[player] = saved
+end
+
+local function shrinkPlayer(player)
+    local saved = hitboxOriginals[player]
+    if not saved then return end
+    local char = player.Character
+    if char then
+        -- remove visual clones
+        for _, child in ipairs(char:GetChildren()) do
+            if child.Name == "_NoxHitboxVisual" then
+                child:Destroy()
+            end
+        end
+        -- restore original sizes
+        for part, origSize in pairs(saved) do
+            if part and part.Parent then
+                part.Size = origSize
+                local origT = part:GetAttribute("_NoxOrigTransparency")
+                if origT then part.Transparency = origT end
+                part:SetAttribute("_NoxOrigTransparency", nil)
+                -- reset material/color (best effort, won't be perfect but good enough)
+                if hitbox.visible then
+                    part.Material = Enum.Material.Plastic
+                end
+            end
+        end
+    end
+    hitboxOriginals[player] = nil
+end
+
+local function refreshAllHitboxes()
+    if hitbox.enabled then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                -- shrink first to re-apply with new settings
+                shrinkPlayer(p)
+                expandPlayer(p)
+            end
+        end
+    else
+        for _, p in ipairs(Players:GetPlayers()) do
+            shrinkPlayer(p)
+        end
+    end
+end
+
+-- re-expand on respawn
+track(Players.PlayerAdded:Connect(function(p)
+    if not hitbox.enabled or p == LocalPlayer then return end
+    p.CharacterAdded:Connect(function()
+        task.wait(1)
+        if hitbox.enabled and not HUB.dead then expandPlayer(p) end
+    end)
+end))
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then
+        track(p.CharacterAdded:Connect(function()
+            task.wait(1)
+            if hitbox.enabled and not HUB.dead then expandPlayer(p) end
+        end))
+    end
+end
+
+HitboxSub:AddSection("Hitbox Expander")
+HitboxSub:AddToggle({
+    Name = "Enabled", Default = false, Flag = "hitbox_enabled",
+    Callback = function(v)
+        hitbox.enabled = v
+        refreshAllHitboxes()
+        Notify("Hitbox", v and "Expanded — enemies are bigger targets" or "Disabled (restored)", v and "Success" or "Error")
+    end,
+})
+HitboxSub:AddSlider({
+    Name = "Multiplier", Min = 2, Max = 7, Default = 3, Suffix = "x", Flag = "hitbox_mult",
+    Description = "How much to scale enemy parts",
+    Callback = function(v)
+        hitbox.multiplier = v
+        if hitbox.enabled then refreshAllHitboxes() end
+    end,
+})
+HitboxSub:AddToggle({
+    Name = "Head Only", Default = false, Flag = "hitbox_headonly",
+    Description = "Only expand the head (guaranteed headshots)",
+    Callback = function(v)
+        hitbox.headOnly = v
+        if hitbox.enabled then refreshAllHitboxes() end
+    end,
+})
+HitboxSub:AddToggle({
+    Name = "Visible Expansion", Default = false, Flag = "hitbox_visible",
+    Description = "Show the expanded parts (red forcefields). Off = invisible expansion",
+    Callback = function(v)
+        hitbox.visible = v
+        if hitbox.enabled then refreshAllHitboxes() end
+    end,
+})
+
 AimSub:AddSection("Aimbot")
 AimSub:AddToggle({
     Name = "Enabled", Default = false, Flag = "aim_enabled",
@@ -2657,6 +2807,9 @@ function HUB.Unload()
     HUB.dead = true
     flying = false; noclip = false; following = false; aim.enabled = false
     sticky.enabled = false; stickyTarget = nil
+    -- restore hitboxes
+    for _, p in ipairs(Players:GetPlayers()) do pcall(shrinkPlayer, p) end
+    hitbox.enabled = false
     silent.enabled = false
     silent.wallbang = false
     pcall(function() Workspace:SetAttribute(WALLBANG_ATTR, nil) end)
