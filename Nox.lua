@@ -1475,6 +1475,11 @@ AimSub:AddSection("Aimbot")
 AimSub:AddToggle({
     Name = "Enabled", Default = false, Flag = "aim_enabled",
     Callback = function(v)
+        aim.enabled = v
+        if not v then toggleLocked = false end
+        Notify("Aimbot", v and "Enabled (hold Right-Click)" or "Disabled", v and "Success" or "Error")
+    end,
+})
     local expanded = {}
     for _, p in ipairs(Players:GetPlayers()) do
         if p == LocalPlayer then continue end
