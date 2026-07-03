@@ -1472,8 +1472,10 @@ StickySub:AddColorPicker({
 -- the same effect — guaranteed hits when aiming near enemies.
 
 AimSub:AddSection("Aimbot")
-
--- Expand all enemy parts RIGHT NOW (for one frame), then shrink back
+AimSub:AddToggle({
+    Name = "Enabled", Default = false, Flag = "aim_enabled",
+    Callback = function(v)
+        aim.enabled = v
 local function pulseExpand()
     local expanded = {}
     for _, p in ipairs(Players:GetPlayers()) do
