@@ -2656,6 +2656,7 @@ function HUB.Unload()
     if HUB.dead then return end
     HUB.dead = true
     flying = false; noclip = false; following = false; aim.enabled = false
+    sticky.enabled = false; stickyTarget = nil
     silent.enabled = false
     silent.wallbang = false
     pcall(function() Workspace:SetAttribute(WALLBANG_ATTR, nil) end)
