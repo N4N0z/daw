@@ -1466,194 +1466,192 @@ StickySub:AddColorPicker({
 })
 
 -- ── Hitbox Expander ─────────────────────────────────────────────────────────
--- Creates invisible ANCHORED overlay parts that follow enemy body parts via
--- CFrame updates each frame. Anchored = no physics assembly joining = no freeze.
--- CanQuery=true so the weapon raycast hits the overlay and registers damage.
+-- Hooks workspace:Raycast so any bullet ray that passes NEAR an enemy body part
+-- (within multiplier * original size) counts as a hit. No physical part changes,
+-- no overlays, no freeze — pure raycast interception. The game's own castBullet
+-- calls workspace:Raycast → our hook widens the effective hit area.
 local HitboxSub = CombatTab:AddSubTab("Hitbox")
 
 local hitbox = {
     enabled    = false,
     multiplier = 3,
     headOnly   = false,
-    visible    = false,   -- show overlay parts as red transparent
 }
 
-local hitboxOverlays = {}  -- [player] = { {overlay=Part, source=Part}[] }
-local hitboxConn = nil     -- RenderStepped connection for CFrame updates
+local originalRaycast = workspace.Raycast
 
-local function expandChar(player)
-    if player == LocalPlayer then return end
-    local char = player.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum or hum.Health <= 0 then return end
-    if hitboxOverlays[player] then return end
+-- get the closest body part to a ray within expanded radius
+local function findExpandedHit(origin, direction)
+    local ray = Ray.new(origin, direction)
+    local bestPart, bestDist, bestPos, bestNormal = nil, math.huge, nil, nil
 
-    local overlays = {}
-    for _, part in ipairs(char:GetChildren()) do
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == LocalPlayer then continue end
+        local char = p.Character
+        if not char then continue end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
+
+        for _, part in ipairs(char:GetChildren()) do
+            if not part:IsA("BasePart") then continue end
+            if part.Name == "HumanoidRootPart" then continue end
             if hitbox.headOnly and part.Name ~= "Head" then continue end
 
-            local overlay = Instance.new("Part")
-            overlay.Name = "_NoxHB"
-            overlay.Size = part.Size * hitbox.multiplier
-            overlay.Transparency = hitbox.visible and 0.7 or 1
-            overlay.CanCollide = false
-            overlay.CanQuery = true
-            overlay.CanTouch = false
-            overlay.Anchored = true       -- KEY: no physics assembly impact
-            overlay.CFrame = part.CFrame
-            if hitbox.visible then
-                overlay.Color = Color3.fromRGB(255, 0, 0)
-                overlay.Material = Enum.Material.ForceField
+            -- expand the part's bounding sphere by multiplier
+            local partPos = part.Position
+            local partRadius = part.Size.Magnitude * 0.5 * hitbox.multiplier
+
+            -- closest point on ray to part center
+            local toCenter = partPos - origin
+            local dirUnit = direction.Unit
+            local proj = toCenter:Dot(dirUnit)
+            if proj < 0 then continue end  -- behind the ray origin
+            if proj > direction.Magnitude then continue end  -- beyond range
+
+            local closestOnRay = origin + dirUnit * proj
+            local dist = (closestOnRay - partPos).Magnitude
+
+            if dist <= partRadius and dist < bestDist then
+                bestDist = dist
+                bestPart = part
+                bestPos = partPos  -- hit position = part center (close enough)
+                bestNormal = (origin - partPos).Unit
             end
-            overlay.Parent = char
-            table.insert(overlays, { overlay = overlay, source = part })
         end
     end
-    hitboxOverlays[player] = overlays
+
+    return bestPart, bestPos, bestNormal
 end
 
-local function removeOverlays(player)
-    local overlays = hitboxOverlays[player]
-    if not overlays then return end
-    for _, entry in ipairs(overlays) do
-        if entry.overlay and entry.overlay.Parent then entry.overlay:Destroy() end
-    end
-    hitboxOverlays[player] = nil
-end
+-- hook
+local hookMeta
+local function installRaycastHook()
+    if hookMeta then return end
 
--- CFrame update loop — moves all overlays to match their source parts
-local function startHitboxUpdate()
-    if hitboxConn then return end
-    hitboxConn = RunService.RenderStepped:Connect(function()
-        if HUB.dead then
-            if hitboxConn then hitboxConn:Disconnect(); hitboxConn = nil end
-            return
-        end
-        for player, overlays in pairs(hitboxOverlays) do
-            for i = #overlays, 1, -1 do
-                local entry = overlays[i]
-                if entry.source and entry.source.Parent and entry.overlay and entry.overlay.Parent then
-                    entry.overlay.CFrame = entry.source.CFrame
-                else
-                    -- source or overlay gone, clean up
-                    if entry.overlay and entry.overlay.Parent then entry.overlay:Destroy() end
-                    table.remove(overlays, i)
+    local mt = getrawmetatable(workspace)
+    if not mt then return end
+
+    local oldNamecall = mt.__namecall
+    local setReadonly = setreadonly or make_writeable or function() end
+
+    pcall(setReadonly, mt, false)
+
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if method == "Raycast" and self == workspace and hitbox.enabled then
+            local args = { ... }
+            local origin = args[1]
+            local direction = args[2]
+
+            -- call original first
+            local result = originalRaycast(workspace, origin, direction, args[3])
+
+            -- if we already hit an enemy, pass through
+            if result and result.Instance then
+                local model = result.Instance:FindFirstAncestorOfClass("Model")
+                if model and model:FindFirstChild("Humanoid") then
+                    return result
                 end
             end
+
+            -- missed enemy — check if we WOULD hit with expanded hitboxes
+            local part, pos, normal = findExpandedHit(origin, direction)
+            if part then
+                -- create a fake RaycastResult-like by doing a raycast directly AT the part
+                -- from very close range to guarantee a hit on the actual body part
+                local dirToPart = (part.Position - origin).Unit
+                local closeOrigin = part.Position - dirToPart * 1
+
+                local params = RaycastParams.new()
+                params.FilterType = Enum.RaycastFilterType.Include
+                params.FilterDescendantsInstances = { part }
+
+                local fakeResult = originalRaycast(workspace, closeOrigin, dirToPart * 3, params)
+                if fakeResult then
+                    return fakeResult
+                end
+            end
+
+            return result
         end
+
+        return oldNamecall(self, ...)
     end)
-    track(hitboxConn)
+
+    pcall(setReadonly, mt, true)
+    hookMeta = true
 end
 
-local function stopHitboxUpdate()
-    if hitboxConn then hitboxConn:Disconnect(); hitboxConn = nil end
-end
+-- Alternative approach if namecall hooking isn't available: hookfunction
+local hookFn
+local function installRaycastHookFn()
+    if hookFn then return end
+    if not hookfunction then return end
 
--- periodic check for new players / missed chars
-task.spawn(function()
-    while true do
-        if HUB.dead then return end
-        if hitbox.enabled then
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer and not hitboxOverlays[p] then
-                    pcall(expandChar, p)
+    local old
+    old = hookfunction(workspace.Raycast, newcclosure(function(self, origin, direction, params, ...)
+        if self == workspace and hitbox.enabled then
+            local result = old(self, origin, direction, params, ...)
+
+            -- if already hit enemy, pass
+            if result and result.Instance then
+                local model = result.Instance:FindFirstAncestorOfClass("Model")
+                if model and model:FindFirstChild("Humanoid") then
+                    return result
                 end
             end
-        end
-        task.wait(1.5)
-    end
-end)
 
--- hook character respawns
-local function hookHitboxCharAdded(player)
-    if player == LocalPlayer then return end
-    track(player.CharacterAdded:Connect(function()
-        removeOverlays(player)
-        task.wait(0.5)
-        if hitbox.enabled and not HUB.dead then pcall(expandChar, player) end
+            -- check expanded hitbox
+            local part, pos, normal = findExpandedHit(origin, direction)
+            if part then
+                local dirToPart = (part.Position - origin).Unit
+                local closeOrigin = part.Position - dirToPart * 1
+                local fakeParams = RaycastParams.new()
+                fakeParams.FilterType = Enum.RaycastFilterType.Include
+                fakeParams.FilterDescendantsInstances = { part }
+                local fakeResult = old(workspace, closeOrigin, dirToPart * 3, fakeParams)
+                if fakeResult then return fakeResult end
+            end
+
+            return result
+        end
+        return old(self, origin, direction, params, ...)
     end))
-end
-for _, p in ipairs(Players:GetPlayers()) do hookHitboxCharAdded(p) end
-track(Players.PlayerAdded:Connect(function(p) hookHitboxCharAdded(p) end))
-track(Players.PlayerRemoving:Connect(function(p) removeOverlays(p) end))
 
--- re-expand after LOCAL player respawns
-track(LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(2)
-    if not hitbox.enabled or HUB.dead then return end
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            removeOverlays(p)
-            pcall(expandChar, p)
-        end
+    hookFn = true
+end
+
+-- try both methods
+local function installHitboxHook()
+    if hookfunction then
+        installRaycastHookFn()
+    else
+        installRaycastHook()
     end
-end))
+end
 
 HitboxSub:AddSection("Hitbox Expander")
+HitboxSub:AddParagraph({
+    Title = "How it works",
+    Text = "Intercepts the weapon raycast — if a bullet misses but passes near an enemy (within expanded radius), it registers as a hit on their actual body part. No visible changes, no freezing.",
+})
 HitboxSub:AddToggle({
     Name = "Enabled", Default = false, Flag = "hitbox_enabled",
     Callback = function(v)
         hitbox.enabled = v
-        if v then
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer then pcall(expandChar, p) end
-            end
-            startHitboxUpdate()
-        else
-            for _, p in ipairs(Players:GetPlayers()) do
-                pcall(removeOverlays, p)
-            end
-            stopHitboxUpdate()
-        end
-        Notify("Hitbox", v and "Expanded — enemies are bigger targets" or "Disabled (restored)", v and "Success" or "Error")
+        if v then installHitboxHook() end
+        Notify("Hitbox", v and "Expanded — shots land if they pass close" or "Disabled", v and "Success" or "Error")
     end,
 })
 HitboxSub:AddSlider({
     Name = "Multiplier", Min = 2, Max = 7, Default = 3, Suffix = "x", Flag = "hitbox_mult",
-    Description = "How much to scale enemy parts",
-    Callback = function(v)
-        hitbox.multiplier = v
-        if hitbox.enabled then
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer then
-                    removeOverlays(p)
-                    pcall(expandChar, p)
-                end
-            end
-        end
-    end,
+    Description = "How wide the hit detection radius is",
+    Callback = function(v) hitbox.multiplier = v end,
 })
 HitboxSub:AddToggle({
     Name = "Head Only", Default = false, Flag = "hitbox_headonly",
-    Description = "Only expand the head (guaranteed headshots)",
-    Callback = function(v)
-        hitbox.headOnly = v
-        if hitbox.enabled then
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer then
-                    removeOverlays(p)
-                    pcall(expandChar, p)
-                end
-            end
-        end
-    end,
-})
-HitboxSub:AddToggle({
-    Name = "Show Hitboxes", Default = false, Flag = "hitbox_visible",
-    Description = "Red overlay so you can see the expanded area",
-    Callback = function(v)
-        hitbox.visible = v
-        if hitbox.enabled then
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer then
-                    removeOverlays(p)
-                    pcall(expandChar, p)
-                end
-            end
-        end
-    end,
+    Description = "Only expand head detection (all hits = headshots)",
+    Callback = function(v) hitbox.headOnly = v end,
 })
 
 AimSub:AddSection("Aimbot")
