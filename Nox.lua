@@ -1466,9 +1466,9 @@ StickySub:AddColorPicker({
 })
 
 -- ── Hitbox Expander ─────────────────────────────────────────────────────────
--- Listens for weapon fire ("Process") and checks if any enemy body part is
--- within expanded screen-space radius of the crosshair. If yes, sends a
--- DamageRequest directly. Works at the remote level — no raycast hooking needed.
+-- Scales enemy body parts directly. The weapon raycast hits the bigger parts
+-- and DamageRequest fires normally. To prevent freeze: we only scale parts
+-- briefly during OUR shot, then restore immediately. Pulse-based approach.
 local HitboxSub = CombatTab:AddSubTab("Hitbox")
 
 _G._NoxHitbox = {
@@ -1479,17 +1479,43 @@ _G._NoxHitbox = {
 }
 local hitbox = _G._NoxHitbox
 
-local WeaponsRemote = game:GetService("ReplicatedStorage"):WaitForChild("Events"):WaitForChild("Weapons")
+-- Expand all enemy parts RIGHT NOW (for one frame), then shrink back
+local function pulseExpand()
+    local expanded = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == LocalPlayer then continue end
+        local char = p.Character
+        if not char then continue end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
 
-local function getClosestPartInExpandedFov()
-    local mouse = UserInputService:GetMouseLocation()
-    local center = Vector2.new(mouse.X, mouse.Y)
-    -- expanded FOV in screen pixels based on multiplier
-    -- at 3x, roughly 150px radius; at 7x, roughly 350px
-    local fovRadius = hitbox.multiplier * 50
+        for _, part in ipairs(char:GetChildren()) do
+            if not part:IsA("BasePart") then continue end
+            if part.Name == "HumanoidRootPart" then continue end
+            if hitbox.headOnly and part.Name ~= "Head" then continue end
+            table.insert(expanded, { part = part, orig = part.Size })
+            part.Size = part.Size * hitbox.multiplier
+        end
+    end
+    return expanded
+end
 
-    local bestPart, bestDist = nil, math.huge
+local function restoreExpand(expanded)
+    for _, entry in ipairs(expanded) do
+        if entry.part and entry.part.Parent then
+            entry.part.Size = entry.orig
+        end
+    end
+end
 
+-- Keep parts expanded while enabled. Re-apply every frame to fight server resets.
+-- The key insight: the freeze only happened because we ALSO added welds/clones.
+-- Pure Size change + CanCollide=false alone should NOT freeze if we don't add
+-- any constraints. Let's test persistent expand with just Size changes.
+local hitboxExpandConn = nil
+local hitboxExpanded = {}  -- {part = origSize}
+
+local function expandAll()
     for _, p in ipairs(Players:GetPlayers()) do
         if p == LocalPlayer then continue end
         local char = p.Character
@@ -1502,85 +1528,46 @@ local function getClosestPartInExpandedFov()
             if part.Name == "HumanoidRootPart" then continue end
             if hitbox.headOnly and part.Name ~= "Head" then continue end
 
-            local sp, onScreen = Camera:WorldToViewportPoint(part.Position)
-            if not onScreen or sp.Z <= 0 then continue end
-
-            local screenDist = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-            if screenDist <= fovRadius and screenDist < bestDist then
-                bestDist = screenDist
-                bestPart = part
+            if not hitboxExpanded[part] then
+                hitboxExpanded[part] = part.Size
+            end
+            local target = hitboxExpanded[part] * hitbox.multiplier
+            if part.Size ~= target then
+                part.Size = target
             end
         end
     end
-
-    return bestPart
 end
 
--- Hook: when weapon fires "Process", check for expanded hit and send DamageRequest
-if not _G._NoxHitboxHooked2 then
-    -- Use namecall hook on the Weapons remote specifically
-    local mt = getrawmetatable(WeaponsRemote)
-    -- Can't hook individual remotes via metatable. Instead, listen for Process
-    -- via a connection on a RenderStepped that detects shots fired.
-    -- Alternative: use the _G.FireBind the game itself exposes (line 85 of WeaponsClient)
-    
-    -- Simplest reliable approach: poll-based. On each shot frame, if mouse1 is
-    -- down and weapon is active, check expanded radius and fire DamageRequest.
-    -- We detect shots by listening to the Weapons remote OnClientEvent for our own
-    -- "RenderTracer" (which fires every shot we take).
-    
-    local lastShotTick = 0
-    track(WeaponsRemote.OnClientEvent:Connect(function(action, ...)
-        if HUB.dead then return end
-        if action ~= "RenderTracer" then return end
-        -- This fires for OTHER players' shots too. Check if it's from us by
-        -- examining the origin position being near our muzzle.
-        local hb = _G._NoxHitbox
-        if not hb or not hb.enabled then return end
-        
-        local now = os.clock()
-        if now - lastShotTick < 0.05 then return end -- debounce
-        lastShotTick = now
-        
-        -- args: tracerType, origin, endPos, hitData
-        local args = { ... }
-        local hitData = args[3]
-        -- If we already damaged someone, skip
-        if type(hitData) == "table" and hitData.Damaged == true then return end
-        
-        -- Check if the tracer origin is near our weapon muzzle
-        local myChar = GetCharacter()
-        if not myChar then return end
-        local myHRP = myChar:FindFirstChild("HumanoidRootPart")
-        if not myHRP then return end
-        
-        local originStr = args[1]
-        if type(originStr) ~= "string" then return end
-        local ox, oy, oz = originStr:match("([%-%d%.]+),%s*([%-%d%.]+),%s*([%-%d%.]+)")
-        if not ox then return end
-        local shotOrigin = Vector3.new(tonumber(ox), tonumber(oy), tonumber(oz))
-        -- Only process our own shots (origin near us)
-        if (shotOrigin - myHRP.Position).Magnitude > 20 then return end
-        
-        -- Now check expanded hitbox
-        local part = getClosestPartInExpandedFov()
-        if part then
-            local char = part:FindFirstAncestorOfClass("Model")
-            local hum = char and char:FindFirstChild("Humanoid")
-            if hum and hum.Health > 0 then
-                task.defer(function()
-                    WeaponsRemote:FireServer("DamageRequest", hum, nil, nil, part, part.Position)
-                end)
-            end
+local function shrinkAll()
+    for part, orig in pairs(hitboxExpanded) do
+        if part and part.Parent then
+            part.Size = orig
         end
-    end))
-    
-    _G._NoxHitboxHooked2 = true
+    end
+    hitboxExpanded = {}
 end
 
--- Visual hitbox (screen-space FOV circle for expanded area)
-local hitboxFovCircle = newDrawing("Circle", { Thickness = 1.5, Filled = false, Visible = false })
+local function startHitboxExpand()
+    if hitboxExpandConn then return end
+    hitboxExpandConn = RunService.Heartbeat:Connect(function()
+        if HUB.dead or not hitbox.enabled then
+            shrinkAll()
+            if hitboxExpandConn then hitboxExpandConn:Disconnect(); hitboxExpandConn = nil end
+            return
+        end
+        expandAll()
+    end)
+    track(hitboxExpandConn)
+end
 
+local function stopHitboxExpand()
+    shrinkAll()
+    if hitboxExpandConn then hitboxExpandConn:Disconnect(); hitboxExpandConn = nil end
+end
+
+-- FOV circle visual for showing the area
+local hitboxFovCircle = newDrawing("Circle", { Thickness = 1.5, Filled = false, Visible = false })
 track(RunService.RenderStepped:Connect(function()
     if HUB.dead then return end
     if hitboxFovCircle then
@@ -1598,28 +1585,32 @@ end))
 HitboxSub:AddSection("Hitbox Expander")
 HitboxSub:AddParagraph({
     Title = "How it works",
-    Text = "When you shoot, if any enemy body part is within the expanded radius of your crosshair, damage registers on them automatically — even if the actual bullet misses.",
+    Text = "Scales enemy body parts so the weapon raycast hits a bigger target. May cause slight visual jitter on enemies.",
 })
 HitboxSub:AddToggle({
     Name = "Enabled", Default = false, Flag = "hitbox_enabled",
     Callback = function(v)
         hitbox.enabled = v
-        Notify("Hitbox", v and "Expanded — shoot near enemies to hit" or "Disabled", v and "Success" or "Error")
+        if v then startHitboxExpand() else stopHitboxExpand() end
+        Notify("Hitbox", v and "Expanded — enemies are bigger targets" or "Disabled", v and "Success" or "Error")
     end,
 })
 HitboxSub:AddSlider({
-    Name = "Multiplier", Min = 2, Max = 7, Default = 3, Suffix = "x", Flag = "hitbox_mult",
-    Description = "Screen radius for expanded hit detection",
+    Name = "Multiplier", Min = 2, Max = 5, Default = 3, Suffix = "x", Flag = "hitbox_mult",
+    Description = "How much to scale enemy parts (lower = less jitter)",
     Callback = function(v) hitbox.multiplier = v end,
 })
 HitboxSub:AddToggle({
     Name = "Head Only", Default = false, Flag = "hitbox_headonly",
-    Description = "Only register head hits (all = headshots)",
-    Callback = function(v) hitbox.headOnly = v end,
+    Description = "Only expand the head (less jitter, all headshots)",
+    Callback = function(v)
+        hitbox.headOnly = v
+        shrinkAll()  -- reset so it re-applies with new filter
+    end,
 })
 HitboxSub:AddToggle({
     Name = "Show Radius", Default = false, Flag = "hitbox_show",
-    Description = "Red circle showing the expanded hit area",
+    Description = "Red circle on crosshair",
     Callback = function(v) hitbox.showHitbox = v end,
 })
 
