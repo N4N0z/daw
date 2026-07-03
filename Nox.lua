@@ -1466,10 +1466,10 @@ StickySub:AddColorPicker({
 })
 
 -- ── Hitbox Expander ─────────────────────────────────────────────────────────
--- Scales enemy body parts directly. The weapon raycast hits the bigger parts
--- and DamageRequest fires normally. To prevent freeze: we only scale parts
--- briefly during OUR shot, then restore immediately. Pulse-based approach.
-local HitboxSub = CombatTab:AddSubTab("Hitbox")
+-- This game has server-authoritative part sizes AND the weapon script caches
+-- its Raycast reference (bypassing __namecall hooks). Hitbox expansion is not
+-- possible on this game. Use Aimbot/Sticky Aim + low smoothness instead for
+-- the same effect — guaranteed hits when aiming near enemies.
 
 _G._NoxHitbox = {
     enabled    = false,
