@@ -1467,126 +1467,137 @@ StickySub:AddColorPicker({
 
 -- ── Hitbox Expander ─────────────────────────────────────────────────────────
 -- Scales enemy character parts on the client so the weapon raycast hits a much
--- bigger target. Server doesn't validate part sizes — it only checks the
--- humanoid reference and hit position are plausible.
+-- bigger target. No clones, no welds — just raw Size override. Parts stay
+-- CanCollide=false so physics doesn't freak out, but CanQuery=true so the
+-- weapon raycast still registers hits.
 local HitboxSub = CombatTab:AddSubTab("Hitbox")
 
 local hitbox = {
     enabled    = false,
     multiplier = 3,
     headOnly   = false,
-    visible    = false,   -- true = show expanded parts (red tint), false = transparent
 }
 
-local hitboxOriginals = {}  -- [player] = { [part] = originalSize }
+local hitboxCache = {}  -- [player] = { [part] = { orig = Vector3, origT = number } }
 
-local function expandPlayer(player)
+local function expandChar(player)
     if player == LocalPlayer then return end
     local char = player.Character
     if not char then return end
-    if hitboxOriginals[player] then return end  -- already expanded
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return end
 
-    local saved = {}
+    -- get or create cache for this player
+    local cache = hitboxCache[player]
+    if not cache then
+        cache = {}
+        hitboxCache[player] = cache
+    end
+
     for _, part in ipairs(char:GetChildren()) do
         if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            if hitbox.headOnly and part.Name ~= "Head" then continue end
-            saved[part] = part.Size
-            part.Size = part.Size * hitbox.multiplier
-            if not hitbox.visible then
-                part.Transparency = 1
-                -- keep a visible clone at original size so the player looks normal
-                local visual = part:Clone()
-                visual.Name = "_NoxHitboxVisual"
-                visual.Size = saved[part]
-                visual.Transparency = part:GetAttribute("_NoxOrigTransparency") or 0
-                visual.CanCollide = false
-                visual.CanQuery = false
-                visual.Anchored = false
-                visual.Massless = true
-                local weld = Instance.new("WeldConstraint")
-                weld.Part0 = part
-                weld.Part1 = visual
-                weld.Parent = visual
-                visual.CFrame = part.CFrame
-                visual.Parent = char
-                part:SetAttribute("_NoxOrigTransparency", part:GetAttribute("_NoxOrigTransparency") or 0)
-            else
-                part.Color = Color3.fromRGB(255, 50, 50)
-                part.Material = Enum.Material.ForceField
-                part.Transparency = 0.6
+            if hitbox.headOnly and part.Name ~= "Head" then
+                -- if part was previously expanded but now head-only, restore it
+                if cache[part] then
+                    part.Size = cache[part].orig
+                    part.Transparency = cache[part].origT
+                    part.CanCollide = cache[part].origCC
+                    cache[part] = nil
+                end
+                continue
+            end
+
+            -- save original once
+            if not cache[part] then
+                cache[part] = {
+                    orig  = part.Size,
+                    origT = part.Transparency,
+                    origCC = part.CanCollide,
+                }
+            end
+
+            local target = cache[part].orig * hitbox.multiplier
+            if part.Size ~= target then
+                part.Size = target
+            end
+            part.Transparency = 1        -- invisible expanded hitbox
+            part.CanCollide = false       -- no physics jank
+            part.CanQuery = true          -- raycast still hits
+        end
+    end
+end
+
+local function restoreChar(player)
+    local cache = hitboxCache[player]
+    if not cache then return end
+    local char = player.Character
+    if char then
+        for part, data in pairs(cache) do
+            if part and part.Parent then
+                part.Size = data.orig
+                part.Transparency = data.origT
+                part.CanCollide = data.origCC
             end
         end
     end
-    hitboxOriginals[player] = saved
+    hitboxCache[player] = nil
 end
 
-local function shrinkPlayer(player)
-    local saved = hitboxOriginals[player]
-    if not saved then return end
-    local char = player.Character
-    if char then
-        -- remove visual clones
-        for _, child in ipairs(char:GetChildren()) do
-            if child.Name == "_NoxHitboxVisual" then
-                child:Destroy()
-            end
-        end
-        -- restore original sizes
-        for part, origSize in pairs(saved) do
-            if part and part.Parent then
-                part.Size = origSize
-                local origT = part:GetAttribute("_NoxOrigTransparency")
-                if origT then part.Transparency = origT end
-                part:SetAttribute("_NoxOrigTransparency", nil)
-                -- reset material/color (best effort, won't be perfect but good enough)
-                if hitbox.visible then
-                    part.Material = Enum.Material.Plastic
+-- continuous loop: re-applies expansion every 0.5s to catch resets (respawns,
+-- streaming, character reloads). Light operation — just checks Size and sets it.
+task.spawn(function()
+    while true do
+        if HUB.dead then return end
+        if hitbox.enabled then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then
+                    pcall(expandChar, p)
                 end
             end
         end
+        task.wait(0.5)
     end
-    hitboxOriginals[player] = nil
-end
+end)
 
-local function refreshAllHitboxes()
-    if hitbox.enabled then
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then
-                -- shrink first to re-apply with new settings
-                shrinkPlayer(p)
-                expandPlayer(p)
-            end
-        end
-    else
-        for _, p in ipairs(Players:GetPlayers()) do
-            shrinkPlayer(p)
+-- also re-expand on any character spawn (enemy or after YOUR respawn triggers re-stream)
+local function hookCharAdded(player)
+    if player == LocalPlayer then return end
+    track(player.CharacterAdded:Connect(function()
+        hitboxCache[player] = nil  -- clear stale refs
+        task.wait(0.5)
+        if hitbox.enabled and not HUB.dead then pcall(expandChar, player) end
+    end))
+end
+for _, p in ipairs(Players:GetPlayers()) do hookCharAdded(p) end
+track(Players.PlayerAdded:Connect(function(p) hookCharAdded(p) end))
+track(Players.PlayerRemoving:Connect(function(p) hitboxCache[p] = nil end))
+
+-- re-expand everyone after LOCAL player respawns (server re-streams chars)
+track(LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1.5)
+    if not hitbox.enabled or HUB.dead then return end
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            hitboxCache[p] = nil
+            pcall(expandChar, p)
         end
     end
-end
-
--- re-expand on respawn
-track(Players.PlayerAdded:Connect(function(p)
-    if not hitbox.enabled or p == LocalPlayer then return end
-    p.CharacterAdded:Connect(function()
-        task.wait(1)
-        if hitbox.enabled and not HUB.dead then expandPlayer(p) end
-    end)
 end))
-for _, p in ipairs(Players:GetPlayers()) do
-    if p ~= LocalPlayer then
-        track(p.CharacterAdded:Connect(function()
-            task.wait(1)
-            if hitbox.enabled and not HUB.dead then expandPlayer(p) end
-        end))
-    end
-end
 
 HitboxSub:AddSection("Hitbox Expander")
 HitboxSub:AddToggle({
     Name = "Enabled", Default = false, Flag = "hitbox_enabled",
     Callback = function(v)
         hitbox.enabled = v
-        refreshAllHitboxes()
+        if v then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then pcall(expandChar, p) end
+            end
+        else
+            for _, p in ipairs(Players:GetPlayers()) do
+                pcall(restoreChar, p)
+            end
+        end
         Notify("Hitbox", v and "Expanded — enemies are bigger targets" or "Disabled (restored)", v and "Success" or "Error")
     end,
 })
@@ -1595,7 +1606,7 @@ HitboxSub:AddSlider({
     Description = "How much to scale enemy parts",
     Callback = function(v)
         hitbox.multiplier = v
-        if hitbox.enabled then refreshAllHitboxes() end
+        -- the loop will re-apply next tick
     end,
 })
 HitboxSub:AddToggle({
@@ -1603,15 +1614,7 @@ HitboxSub:AddToggle({
     Description = "Only expand the head (guaranteed headshots)",
     Callback = function(v)
         hitbox.headOnly = v
-        if hitbox.enabled then refreshAllHitboxes() end
-    end,
-})
-HitboxSub:AddToggle({
-    Name = "Visible Expansion", Default = false, Flag = "hitbox_visible",
-    Description = "Show the expanded parts (red forcefields). Off = invisible expansion",
-    Callback = function(v)
-        hitbox.visible = v
-        if hitbox.enabled then refreshAllHitboxes() end
+        -- the loop will re-apply next tick
     end,
 })
 
@@ -2808,7 +2811,7 @@ function HUB.Unload()
     flying = false; noclip = false; following = false; aim.enabled = false
     sticky.enabled = false; stickyTarget = nil
     -- restore hitboxes
-    for _, p in ipairs(Players:GetPlayers()) do pcall(shrinkPlayer, p) end
+    for _, p in ipairs(Players:GetPlayers()) do pcall(restoreChar, p) end
     hitbox.enabled = false
     silent.enabled = false
     silent.wallbang = false
