@@ -1482,17 +1482,9 @@ AimSub:AddToggle({
 })
 AimSub:AddSlider({
     Name = "Smoothness", Min = 1, Max = 40, Default = 12, Suffix = "",
-
-        for _, part in ipairs(char:GetChildren()) do
-            if not part:IsA("BasePart") then continue end
-            if part.Name == "HumanoidRootPart" then continue end
-            if hitbox.headOnly and part.Name ~= "Head" then continue end
-            table.insert(expanded, { part = part, orig = part.Size })
-            part.Size = part.Size * hitbox.multiplier
-        end
-    end
-    return expanded
-end
+    Description = "Higher = smoother / slower lock", Flag = "aim_smooth",
+    Callback = function(v) aim.smoothness = v end,
+})
 
 local function restoreExpand(expanded)
     for _, entry in ipairs(expanded) do
