@@ -1466,8 +1466,205 @@ StickySub:AddColorPicker({
 })
 
 -- ── Hitbox Expander ─────────────────────────────────────────────────────────
--- Hooks workspace:Raycast so any bullet ray that passes NEAR an enemy body part
--- (within multiplier * original size) counts as a hit. No physical part changes,
+-- Hooks __namecall on workspace to intercept :Raycast() calls. If a bullet
+-- misses but the ray passes near an enemy (expanded radius), returns a hit on
+-- their real body part. State in _G so re-execution never breaks the hook.
+local HitboxSub = CombatTab:AddSubTab("Hitbox")
+
+_G._NoxHitbox = {
+    enabled    = false,
+    multiplier = 3,
+    headOnly   = false,
+    showHitbox = false,
+}
+local hitbox = _G._NoxHitbox
+
+-- Install the namecall hook ONCE (ever). Guarded by _G flag.
+if not _G._NoxHitboxHooked then
+    local P = Players
+    local LP = LocalPlayer
+    local mt = getrawmetatable(workspace)
+    setreadonly(mt, false)
+    local oldNc = mt.__namecall
+
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if self == workspace and method == "Raycast" then
+            local hb = _G._NoxHitbox
+            if hb and hb.enabled then
+                local args = { ... }
+                local origin = args[1]
+                local direction = args[2]
+
+                local result = oldNc(self, ...)
+
+                -- already hit an enemy? pass through
+                if result and result.Instance then
+                    local model = result.Instance:FindFirstAncestorOfClass("Model")
+                    if model and model:FindFirstChild("Humanoid") then
+                        return result
+                    end
+                end
+
+                -- check expanded hitbox (only for weapon-length rays, skip short ones)
+                if origin and direction and typeof(origin) == "Vector3" and typeof(direction) == "Vector3" then
+                    local dirMag = direction.Magnitude
+                    if dirMag > 50 then
+                        local dirUnit = direction.Unit
+                        local bestPart, bestDist = nil, math.huge
+
+                        for _, p in ipairs(P:GetPlayers()) do
+                            if p == LP then continue end
+                            local char = p.Character
+                            if not char then continue end
+                            local hum = char:FindFirstChildOfClass("Humanoid")
+                            if not hum or hum.Health <= 0 then continue end
+
+                            for _, part in ipairs(char:GetChildren()) do
+                                if not part:IsA("BasePart") then continue end
+                                if part.Name == "HumanoidRootPart" then continue end
+                                if hb.headOnly and part.Name ~= "Head" then continue end
+
+                                local partPos = part.Position
+                                local partRadius = part.Size.Magnitude * 0.5 * hb.multiplier
+                                local toCenter = partPos - origin
+                                local proj = toCenter:Dot(dirUnit)
+                                if proj < 0 or proj > dirMag then continue end
+
+                                local closestOnRay = origin + dirUnit * proj
+                                local dist = (closestOnRay - partPos).Magnitude
+
+                                if dist <= partRadius and dist < bestDist then
+                                    bestDist = dist
+                                    bestPart = part
+                                end
+                            end
+                        end
+
+                        if bestPart then
+                            local dirToPart = (bestPart.Position - origin).Unit
+                            local closeOrigin = bestPart.Position - dirToPart * 3
+                            local fakeParams = RaycastParams.new()
+                            fakeParams.FilterType = Enum.RaycastFilterType.Include
+                            fakeParams.FilterDescendantsInstances = { bestPart }
+                            local fakeResult = oldNc(workspace, closeOrigin, dirToPart * 6, fakeParams)
+                            if fakeResult then return fakeResult end
+                        end
+                    end
+                end
+
+                return result
+            end
+        end
+        return oldNc(self, ...)
+    end)
+    setreadonly(mt, true)
+    _G._NoxHitboxHooked = true
+end
+
+-- Visual hitbox spheres
+local hitboxHighlights = {}
+local hitboxVisConn = nil
+
+local function removeHitboxVisuals()
+    for _, spheres in pairs(hitboxHighlights) do
+        for _, entry in ipairs(spheres) do
+            if entry.sphere and entry.sphere.Parent then entry.sphere:Destroy() end
+        end
+    end
+    hitboxHighlights = {}
+end
+
+local function startHitboxVis()
+    if hitboxVisConn then return end
+    hitboxVisConn = RunService.RenderStepped:Connect(function()
+        if HUB.dead or not hitbox.showHitbox then
+            if hitboxVisConn then hitboxVisConn:Disconnect(); hitboxVisConn = nil end
+            removeHitboxVisuals()
+            return
+        end
+        -- update existing + remove dead
+        for player, spheres in pairs(hitboxHighlights) do
+            for i = #spheres, 1, -1 do
+                local entry = spheres[i]
+                if entry.source and entry.source.Parent and entry.sphere and entry.sphere.Parent then
+                    entry.sphere.CFrame = entry.source.CFrame
+                    entry.sphere.Size = Vector3.new(1, 1, 1) * (entry.source.Size.Magnitude * hitbox.multiplier)
+                else
+                    if entry.sphere and entry.sphere.Parent then entry.sphere:Destroy() end
+                    table.remove(spheres, i)
+                end
+            end
+        end
+        -- add new players
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p == LocalPlayer or hitboxHighlights[p] then continue end
+            local char = p.Character
+            if not char then continue end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then continue end
+            local spheres = {}
+            for _, part in ipairs(char:GetChildren()) do
+                if not part:IsA("BasePart") then continue end
+                if part.Name == "HumanoidRootPart" then continue end
+                if hitbox.headOnly and part.Name ~= "Head" then continue end
+                local s = Instance.new("Part")
+                s.Name = "_NoxHBVis"
+                s.Shape = Enum.PartType.Ball
+                s.Size = Vector3.new(1,1,1) * (part.Size.Magnitude * hitbox.multiplier)
+                s.Transparency = 0.75
+                s.Color = Color3.fromRGB(255, 0, 0)
+                s.Material = Enum.Material.ForceField
+                s.CanCollide = false
+                s.CanQuery = false
+                s.CanTouch = false
+                s.Anchored = true
+                s.CFrame = part.CFrame
+                s.Parent = char
+                table.insert(spheres, { sphere = s, source = part })
+            end
+            hitboxHighlights[p] = spheres
+        end
+    end)
+    track(hitboxVisConn)
+end
+
+HitboxSub:AddSection("Hitbox Expander")
+HitboxSub:AddParagraph({
+    Title = "How it works",
+    Text = "Intercepts weapon raycasts. Near-misses within the expanded radius register as hits on real body parts.",
+})
+HitboxSub:AddToggle({
+    Name = "Enabled", Default = false, Flag = "hitbox_enabled",
+    Callback = function(v)
+        hitbox.enabled = v
+        Notify("Hitbox", v and "Expanded — near-misses count as hits" or "Disabled", v and "Success" or "Error")
+    end,
+})
+HitboxSub:AddSlider({
+    Name = "Multiplier", Min = 2, Max = 7, Default = 3, Suffix = "x", Flag = "hitbox_mult",
+    Description = "How wide the hit detection radius is",
+    Callback = function(v) hitbox.multiplier = v end,
+})
+HitboxSub:AddToggle({
+    Name = "Head Only", Default = false, Flag = "hitbox_headonly",
+    Description = "Only expand head detection (all hits = headshots)",
+    Callback = function(v) hitbox.headOnly = v end,
+})
+HitboxSub:AddToggle({
+    Name = "Show Hitboxes", Default = false, Flag = "hitbox_show",
+    Description = "Red spheres showing the expanded hit radius",
+    Callback = function(v)
+        hitbox.showHitbox = v
+        if v then startHitboxVis()
+        else
+            if hitboxVisConn then hitboxVisConn:Disconnect(); hitboxVisConn = nil end
+            removeHitboxVisuals()
+        end
+    end,
+})
+
+AimSub:AddSection("Aimbot")
 -- no overlays, no freeze — pure raycast interception. The game's own castBullet
 -- calls workspace:Raycast → our hook widens the effective hit area.
 local HitboxSub = CombatTab:AddSubTab("Hitbox")
