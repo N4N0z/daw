@@ -1466,10 +1466,10 @@ StickySub:AddColorPicker({
 })
 
 -- ── Hitbox Expander ─────────────────────────────────────────────────────────
--- Scales enemy character parts on the client so the weapon raycast hits a much
--- bigger target. No clones, no welds — just raw Size override. Parts stay
--- CanCollide=false so physics doesn't freak out, but CanQuery=true so the
--- weapon raycast still registers hits.
+-- Creates invisible overlay parts welded to enemy body parts. The overlays are
+-- bigger but have no physics impact (Massless, CanCollide=false, no joints).
+-- The weapon raycast (CanQuery) hits the overlay → registers as hitting the
+-- parent part's ancestor model → DamageRequest works. Zero rig disruption.
 local HitboxSub = CombatTab:AddSubTab("Hitbox")
 
 local hitbox = {
@@ -1478,7 +1478,7 @@ local hitbox = {
     headOnly   = false,
 }
 
-local hitboxCache = {}  -- [player] = { [part] = { orig = Vector3, origT = number } }
+local hitboxOverlays = {}  -- [player] = { Part[] }
 
 local function expandChar(player)
     if player == LocalPlayer then return end
@@ -1486,99 +1486,81 @@ local function expandChar(player)
     if not char then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return end
+    if hitboxOverlays[player] then return end  -- already expanded
 
-    -- get or create cache for this player
-    local cache = hitboxCache[player]
-    if not cache then
-        cache = {}
-        hitboxCache[player] = cache
-    end
-
+    local overlays = {}
     for _, part in ipairs(char:GetChildren()) do
         if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            if hitbox.headOnly and part.Name ~= "Head" then
-                -- if part was previously expanded but now head-only, restore it
-                if cache[part] then
-                    part.Size = cache[part].orig
-                    part.Transparency = cache[part].origT
-                    part.CanCollide = cache[part].origCC
-                    cache[part] = nil
-                end
-                continue
-            end
+            if hitbox.headOnly and part.Name ~= "Head" then continue end
 
-            -- save original once
-            if not cache[part] then
-                cache[part] = {
-                    orig  = part.Size,
-                    origT = part.Transparency,
-                    origCC = part.CanCollide,
-                }
-            end
+            local overlay = Instance.new("Part")
+            overlay.Name = "_NoxHB"
+            overlay.Size = part.Size * hitbox.multiplier
+            overlay.Transparency = 1
+            overlay.CanCollide = false
+            overlay.CanQuery = true
+            overlay.CanTouch = false
+            overlay.Massless = true
+            overlay.Anchored = false
+            overlay.CFrame = part.CFrame
 
-            local target = cache[part].orig * hitbox.multiplier
-            if part.Size ~= target then
-                part.Size = target
-            end
-            part.Transparency = 1        -- invisible expanded hitbox
-            part.CanCollide = false       -- no physics jank
-            part.CanQuery = true          -- raycast still hits
+            -- weld overlay to the real part so it follows movement
+            local weld = Instance.new("WeldConstraint")
+            weld.Part0 = part
+            weld.Part1 = overlay
+            weld.Parent = overlay
+
+            overlay.Parent = char
+            table.insert(overlays, overlay)
         end
     end
+    hitboxOverlays[player] = overlays
 end
 
-local function restoreChar(player)
-    local cache = hitboxCache[player]
-    if not cache then return end
-    local char = player.Character
-    if char then
-        for part, data in pairs(cache) do
-            if part and part.Parent then
-                part.Size = data.orig
-                part.Transparency = data.origT
-                part.CanCollide = data.origCC
-            end
-        end
+local function removeOverlays(player)
+    local overlays = hitboxOverlays[player]
+    if not overlays then return end
+    for _, ov in ipairs(overlays) do
+        if ov and ov.Parent then ov:Destroy() end
     end
-    hitboxCache[player] = nil
+    hitboxOverlays[player] = nil
 end
 
--- continuous loop: re-applies expansion every 0.5s to catch resets (respawns,
--- streaming, character reloads). Light operation — just checks Size and sets it.
+-- continuous loop: re-applies expansion to catch new players / respawns / resets
 task.spawn(function()
     while true do
         if HUB.dead then return end
         if hitbox.enabled then
             for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer then
+                if p ~= LocalPlayer and not hitboxOverlays[p] then
                     pcall(expandChar, p)
                 end
             end
         end
-        task.wait(0.5)
+        task.wait(1)
     end
 end)
 
--- also re-expand on any character spawn (enemy or after YOUR respawn triggers re-stream)
-local function hookCharAdded(player)
+-- hook character respawns
+local function hookHitboxCharAdded(player)
     if player == LocalPlayer then return end
     track(player.CharacterAdded:Connect(function()
-        hitboxCache[player] = nil  -- clear stale refs
+        removeOverlays(player)  -- clear stale overlays
         task.wait(0.5)
         if hitbox.enabled and not HUB.dead then pcall(expandChar, player) end
     end))
 end
-for _, p in ipairs(Players:GetPlayers()) do hookCharAdded(p) end
-track(Players.PlayerAdded:Connect(function(p) hookCharAdded(p) end))
-track(Players.PlayerRemoving:Connect(function(p) hitboxCache[p] = nil end))
+for _, p in ipairs(Players:GetPlayers()) do hookHitboxCharAdded(p) end
+track(Players.PlayerAdded:Connect(function(p) hookHitboxCharAdded(p) end))
+track(Players.PlayerRemoving:Connect(function(p) removeOverlays(p) end))
 
--- re-expand everyone after LOCAL player respawns (server re-streams chars)
+-- re-expand after LOCAL player respawns (server re-streams enemies)
 track(LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(1.5)
+    task.wait(2)
     if not hitbox.enabled or HUB.dead then return end
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
-            hitboxCache[p] = nil
+            removeOverlays(p)
             pcall(expandChar, p)
         end
     end
@@ -1595,7 +1577,7 @@ HitboxSub:AddToggle({
             end
         else
             for _, p in ipairs(Players:GetPlayers()) do
-                pcall(restoreChar, p)
+                pcall(removeOverlays, p)
             end
         end
         Notify("Hitbox", v and "Expanded — enemies are bigger targets" or "Disabled (restored)", v and "Success" or "Error")
@@ -1606,7 +1588,15 @@ HitboxSub:AddSlider({
     Description = "How much to scale enemy parts",
     Callback = function(v)
         hitbox.multiplier = v
-        -- the loop will re-apply next tick
+        if hitbox.enabled then
+            -- rebuild overlays with new size
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then
+                    removeOverlays(p)
+                    pcall(expandChar, p)
+                end
+            end
+        end
     end,
 })
 HitboxSub:AddToggle({
@@ -1614,7 +1604,14 @@ HitboxSub:AddToggle({
     Description = "Only expand the head (guaranteed headshots)",
     Callback = function(v)
         hitbox.headOnly = v
-        -- the loop will re-apply next tick
+        if hitbox.enabled then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then
+                    removeOverlays(p)
+                    pcall(expandChar, p)
+                end
+            end
+        end
     end,
 })
 
