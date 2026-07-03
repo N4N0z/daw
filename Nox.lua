@@ -1476,6 +1476,7 @@ local hitbox = {
     enabled    = false,
     multiplier = 3,
     headOnly   = false,
+    showHitbox = false,
 }
 
 local originalRaycast = workspace.Raycast
@@ -2847,9 +2848,7 @@ function HUB.Unload()
     flying = false; noclip = false; following = false; aim.enabled = false
     sticky.enabled = false; stickyTarget = nil
     -- restore hitboxes
-    for _, p in ipairs(Players:GetPlayers()) do pcall(removeOverlays, p) end
     hitbox.enabled = false
-    pcall(stopHitboxUpdate)
     silent.enabled = false
     silent.wallbang = false
     pcall(function() Workspace:SetAttribute(WALLBANG_ATTR, nil) end)
