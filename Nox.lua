@@ -1471,13 +1471,7 @@ StickySub:AddColorPicker({
 -- possible on this game. Use Aimbot/Sticky Aim + low smoothness instead for
 -- the same effect — guaranteed hits when aiming near enemies.
 
-_G._NoxHitbox = {
-    enabled    = false,
-    multiplier = 3,
-    headOnly   = false,
-    showHitbox = false,
-}
-local hitbox = _G._NoxHitbox
+AimSub:AddSection("Aimbot")
 
 -- Expand all enemy parts RIGHT NOW (for one frame), then shrink back
 local function pulseExpand()
