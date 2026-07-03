@@ -1224,6 +1224,247 @@ track(RunService.RenderStepped:Connect(function()
     Camera.CFrame = Camera.CFrame:Lerp(goal, alpha)
 end))
 
+-- ── Sticky Aim ──────────────────────────────────────────────────────────────
+-- Locks onto a single target and tracks them until they die, go off-screen,
+-- leave FOV, or you release the activation key. Much better for sustained
+-- gunfights than the normal "closest every frame" aimbot above.
+local StickySub = CombatTab:AddSubTab("Sticky Aim")
+
+local sticky = {
+    enabled      = false,
+    smoothness   = 8,
+    fov          = 180,
+    part         = "Head",
+    teamCheck    = false,
+    visibleCheck = false,
+    aliveCheck   = true,
+    useRightClick = true,
+    altKey       = nil,
+    toggleMode   = false,
+    showFov      = true,
+    fovColor     = Color3.fromRGB(255, 60, 60),
+    unlockOnKill = true,
+    prediction   = 0,       -- velocity prediction strength (0 = off)
+}
+
+local stickyTarget = nil    -- the locked Player instance
+local stickyMB2, stickyAlt, stickyToggled = false, false, false
+
+local function stickyWanted()
+    if sticky.toggleMode then return stickyToggled end
+    return (sticky.useRightClick and stickyMB2) or (sticky.altKey ~= nil and stickyAlt)
+end
+
+track(UserInputService.InputBegan:Connect(function(input, gp)
+    if HUB.dead then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then stickyMB2 = true end
+    if sticky.altKey and input.KeyCode == sticky.altKey then
+        stickyAlt = true
+        if sticky.toggleMode then stickyToggled = not stickyToggled end
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 and sticky.toggleMode and sticky.useRightClick then
+        stickyToggled = not stickyToggled
+    end
+end))
+track(UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then stickyMB2 = false end
+    if sticky.altKey and input.KeyCode == sticky.altKey then stickyAlt = false end
+end))
+
+local stickyFovCircle = newDrawing("Circle", { Thickness = 1.5, Filled = false, Visible = false })
+
+local function getStickyAimPart(char)
+    if not char then return nil end
+    return char:FindFirstChild(sticky.part)
+        or char:FindFirstChild("Head")
+        or char:FindFirstChild("HumanoidRootPart")
+end
+
+local function stickyAlive(char)
+    if not sticky.aliveCheck then return true end
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    return hum ~= nil and hum.Health > 0
+end
+
+local function stickyVisible(char, part)
+    if not sticky.visibleCheck then return true end
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { GetCharacter() }
+    local origin = Camera.CFrame.Position
+    local dir = part.Position - origin
+    local result = Workspace:Raycast(origin, dir, params)
+    if not result then return true end
+    return result.Instance:IsDescendantOf(char)
+end
+
+local function stickyInFov(part)
+    local mouse = UserInputService:GetMouseLocation()
+    local center = Vector2.new(mouse.X, mouse.Y)
+    local sp, onScreen = Camera:WorldToViewportPoint(part.Position)
+    if not onScreen or sp.Z <= 0 then return false end
+    return (Vector2.new(sp.X, sp.Y) - center).Magnitude <= sticky.fov
+end
+
+local function stickyAcquire()
+    local best, bestDist
+    local mouse = UserInputService:GetMouseLocation()
+    local center = Vector2.new(mouse.X, mouse.Y)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            if sticky.teamCheck and p.Team ~= nil and LocalPlayer.Team ~= nil and p.Team == LocalPlayer.Team then
+                continue
+            end
+            local char = p.Character
+            local part = getStickyAimPart(char)
+            if part and stickyAlive(char) then
+                local sp, onScreen = Camera:WorldToViewportPoint(part.Position)
+                if onScreen and sp.Z > 0 then
+                    local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                    if d <= sticky.fov and (not bestDist or d < bestDist) then
+                        if stickyVisible(char, part) then
+                            best, bestDist = p, d
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+local function stickyValid(player)
+    if not player or not player.Parent then return false end
+    local char = player.Character
+    if not char then return false end
+    local part = getStickyAimPart(char)
+    if not part then return false end
+    if not stickyAlive(char) then return false end
+    if sticky.visibleCheck and not stickyVisible(char, part) then return false end
+    if not stickyInFov(part) then return false end
+    return true
+end
+
+track(RunService.RenderStepped:Connect(function()
+    if HUB.dead then return end
+
+    -- FOV circle
+    if stickyFovCircle then
+        stickyFovCircle.Visible = sticky.enabled and sticky.showFov and hasDrawing
+        if stickyFovCircle.Visible then
+            local mouse = UserInputService:GetMouseLocation()
+            stickyFovCircle.Position = Vector2.new(mouse.X, mouse.Y)
+            stickyFovCircle.Radius = sticky.fov
+            stickyFovCircle.Color = sticky.fovColor
+        end
+    end
+
+    if not sticky.enabled then stickyTarget = nil; return end
+
+    -- release lock when activation drops
+    if not stickyWanted() then
+        stickyTarget = nil
+        return
+    end
+
+    -- validate current lock
+    if stickyTarget and not stickyValid(stickyTarget) then
+        -- unlock on kill notification
+        if sticky.unlockOnKill then
+            local char = stickyTarget.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health <= 0 then
+                -- target died, release
+            end
+        end
+        stickyTarget = nil
+    end
+
+    -- acquire if no lock
+    if not stickyTarget then
+        stickyTarget = stickyAcquire()
+    end
+
+    -- aim at locked target
+    if stickyTarget then
+        local char = stickyTarget.Character
+        local part = getStickyAimPart(char)
+        if part then
+            local aimPos = part.Position
+            -- velocity prediction
+            if sticky.prediction > 0 then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    aimPos = aimPos + hrp.AssemblyLinearVelocity * (sticky.prediction * 0.016)
+                end
+            end
+            local camPos = Camera.CFrame.Position
+            local goal = CFrame.new(camPos, aimPos)
+            local alpha = math.clamp(1 / math.max(sticky.smoothness, 1), 0, 1)
+            Camera.CFrame = Camera.CFrame:Lerp(goal, alpha)
+        end
+    end
+end))
+
+StickySub:AddSection("Sticky Aim")
+StickySub:AddToggle({
+    Name = "Enabled", Default = false, Flag = "sticky_enabled",
+    Callback = function(v)
+        sticky.enabled = v
+        if not v then stickyTarget = nil; stickyToggled = false end
+        Notify("Sticky Aim", v and "Enabled — locks one target" or "Disabled", v and "Success" or "Error")
+    end,
+})
+StickySub:AddSlider({
+    Name = "Smoothness", Min = 1, Max = 40, Default = 8, Suffix = "",
+    Description = "Higher = smoother camera tracking", Flag = "sticky_smooth",
+    Callback = function(v) sticky.smoothness = v end,
+})
+StickySub:AddSlider({
+    Name = "FOV (px)", Min = 30, Max = 600, Default = 180, Suffix = "", Flag = "sticky_fov",
+    Callback = function(v) sticky.fov = v end,
+})
+StickySub:AddSlider({
+    Name = "Prediction", Min = 0, Max = 20, Default = 0, Suffix = "",
+    Description = "Leads the target by velocity (0 = off)", Flag = "sticky_pred",
+    Callback = function(v) sticky.prediction = v end,
+})
+
+local applyStickyPart = function(v) sticky.part = v end
+local stickyPartDropdown = StickySub:AddDropdown({
+    Name = "Target Part", Options = { "Head", "UpperTorso", "Torso", "HumanoidRootPart" },
+    Default = "Head", MaxVisible = 4, Flag = "sticky_part",
+    Callback = applyStickyPart,
+})
+registerResync(stickyPartDropdown, applyStickyPart)
+
+StickySub:AddSection("Filters")
+StickySub:AddToggle({ Name = "Team Check", Default = false, Flag = "sticky_team", Callback = function(v) sticky.teamCheck = v end })
+StickySub:AddToggle({ Name = "Wall Check", Default = false, Flag = "sticky_visible", Callback = function(v) sticky.visibleCheck = v end })
+StickySub:AddToggle({ Name = "Alive Check", Default = true, Flag = "sticky_alive", Callback = function(v) sticky.aliveCheck = v end })
+StickySub:AddToggle({ Name = "Unlock On Kill", Default = true, Flag = "sticky_unlockdeath", Description = "Drop lock when target dies", Callback = function(v) sticky.unlockOnKill = v end })
+
+StickySub:AddSection("Activation")
+StickySub:AddToggle({ Name = "Hold Right-Click", Default = true, Flag = "sticky_rmb", Callback = function(v) sticky.useRightClick = v end })
+StickySub:AddToggle({
+    Name = "Toggle Mode", Default = false, Flag = "sticky_toggle",
+    Description = "Press to lock/unlock instead of holding",
+    Callback = function(v) sticky.toggleMode = v; stickyToggled = false; stickyTarget = nil end,
+})
+StickySub:AddKeybind({
+    Name = "Alt Key", Default = nil, Flag = "sticky_altkey",
+    Callback = function(k) sticky.altKey = k; stickyAlt = false end,
+})
+
+StickySub:AddSection("FOV Circle")
+StickySub:AddToggle({
+    Name = "Show FOV Circle", Default = true, Flag = "sticky_showfov",
+    Callback = function(v) sticky.showFov = v and hasDrawing end,
+})
+StickySub:AddColorPicker({
+    Name = "FOV Color", Default = Color3.fromRGB(255, 60, 60), Flag = "sticky_fovcolor",
+    Callback = function(c) sticky.fovColor = c end,
+})
+
 AimSub:AddSection("Aimbot")
 AimSub:AddToggle({
     Name = "Enabled", Default = false, Flag = "aim_enabled",
