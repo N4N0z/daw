@@ -1478,6 +1478,8 @@ local hitbox = {
     headOnly   = false,
     showHitbox = false,
 }
+-- Store in _G so the __namecall hook always reads current state even after re-execution
+_G._NoxHitbox = hitbox
 
 -- get the closest body part to a ray within expanded radius
 local function findExpandedHit(origin, direction)
@@ -1525,7 +1527,8 @@ end
 -- hook
 local hookInstalled = false
 local function installHitboxHook()
-    if hookInstalled then return end
+    -- Only install once globally (survives re-execution)
+    if _G._NoxHitboxHooked then return end
 
     local mt = getrawmetatable(workspace)
     if not mt then
@@ -1538,49 +1541,53 @@ local function installHitboxHook()
     setreadonly(mt, false)
     mt.__namecall = newcclosure(function(self, ...)
         local method = getnamecallmethod()
-        if method == "Raycast" and self == workspace and hitbox.enabled then
-            local args = { ... }
-            local origin = args[1]
-            local direction = args[2]
-            local params = args[3]
+        if method == "Raycast" and self == workspace then
+            -- always read from _G so re-execution updates take effect
+            local hb = _G._NoxHitbox
+            if hb and hb.enabled then
+                local args = { ... }
+                local origin = args[1]
+                local direction = args[2]
 
-            -- call original first
-            local result = oldNamecall(self, ...)
+                -- call original first
+                local result = oldNamecall(self, ...)
 
-            -- if we already hit an enemy, pass through
-            if result and result.Instance then
-                local model = result.Instance:FindFirstAncestorOfClass("Model")
-                if model and model:FindFirstChild("Humanoid") then
-                    return result
-                end
-            end
-
-            -- missed enemy — check if we WOULD hit with expanded hitboxes
-            if origin and direction then
-                local part, pos, normal = findExpandedHit(origin, direction)
-                if part then
-                    -- fire a short raycast directly at the real body part
-                    local dirToPart = (part.Position - origin).Unit
-                    local closeOrigin = part.Position - dirToPart * 2
-
-                    local fakeParams = RaycastParams.new()
-                    fakeParams.FilterType = Enum.RaycastFilterType.Include
-                    fakeParams.FilterDescendantsInstances = { part }
-
-                    local fakeResult = oldNamecall(workspace, closeOrigin, dirToPart * 5, fakeParams)
-                    if fakeResult then
-                        return fakeResult
+                -- if we already hit an enemy, pass through
+                if result and result.Instance then
+                    local model = result.Instance:FindFirstAncestorOfClass("Model")
+                    if model and model:FindFirstChild("Humanoid") then
+                        return result
                     end
                 end
-            end
 
-            return result
+                -- missed enemy — check if we WOULD hit with expanded hitboxes
+                if origin and direction then
+                    local part = findExpandedHit(origin, direction)
+                    if part then
+                        -- fire a short raycast directly at the real body part
+                        local dirToPart = (part.Position - origin).Unit
+                        local closeOrigin = part.Position - dirToPart * 2
+
+                        local fakeParams = RaycastParams.new()
+                        fakeParams.FilterType = Enum.RaycastFilterType.Include
+                        fakeParams.FilterDescendantsInstances = { part }
+
+                        local fakeResult = oldNamecall(workspace, closeOrigin, dirToPart * 5, fakeParams)
+                        if fakeResult then
+                            return fakeResult
+                        end
+                    end
+                end
+
+                return result
+            end
         end
 
         return oldNamecall(self, ...)
     end)
     setreadonly(mt, true)
 
+    _G._NoxHitboxHooked = true
     hookInstalled = true
 end
 
