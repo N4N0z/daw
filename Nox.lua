@@ -1475,6 +1475,7 @@ local hitbox = {
     enabled    = false,
     multiplier = 3,
     headOnly   = false,
+    visible    = false,   -- show overlay parts as red transparent
 }
 
 local hitboxOverlays = {}  -- [player] = { {overlay=Part, source=Part}[] }
@@ -1496,12 +1497,16 @@ local function expandChar(player)
             local overlay = Instance.new("Part")
             overlay.Name = "_NoxHB"
             overlay.Size = part.Size * hitbox.multiplier
-            overlay.Transparency = 1
+            overlay.Transparency = hitbox.visible and 0.7 or 1
             overlay.CanCollide = false
             overlay.CanQuery = true
             overlay.CanTouch = false
             overlay.Anchored = true       -- KEY: no physics assembly impact
             overlay.CFrame = part.CFrame
+            if hitbox.visible then
+                overlay.Color = Color3.fromRGB(255, 0, 0)
+                overlay.Material = Enum.Material.ForceField
+            end
             overlay.Parent = char
             table.insert(overlays, { overlay = overlay, source = part })
         end
@@ -1625,6 +1630,21 @@ HitboxSub:AddToggle({
     Description = "Only expand the head (guaranteed headshots)",
     Callback = function(v)
         hitbox.headOnly = v
+        if hitbox.enabled then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then
+                    removeOverlays(p)
+                    pcall(expandChar, p)
+                end
+            end
+        end
+    end,
+})
+HitboxSub:AddToggle({
+    Name = "Show Hitboxes", Default = false, Flag = "hitbox_visible",
+    Description = "Red overlay so you can see the expanded area",
+    Callback = function(v)
+        hitbox.visible = v
         if hitbox.enabled then
             for _, p in ipairs(Players:GetPlayers()) do
                 if p ~= LocalPlayer then
