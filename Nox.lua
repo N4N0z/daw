@@ -1485,9 +1485,8 @@ AimSub:AddSlider({
     Description = "Higher = smoother / slower lock", Flag = "aim_smooth",
     Callback = function(v) aim.smoothness = v end,
 })
-
-local function restoreExpand(expanded)
-    for _, entry in ipairs(expanded) do
+AimSub:AddSlider({
+    Name = "FOV (px)", Min = 30, Max = 600, Default = 150, Suffix = "", Flag = "aim_fov",
         if entry.part and entry.part.Parent then
             entry.part.Size = entry.orig
         end
