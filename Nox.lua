@@ -1283,170 +1283,86 @@ AimSub:AddColorPicker({
 })
 
 -- ── Hitbox Expander ─────────────────────────────────────────────────────────
--- Adds invisible enlarged parts inside enemy characters. Parts are non-anchored
--- and massless (no freeze). CFrame updated every frame. The weapon raycast hits
--- these bigger parts → FindFirstAncestorOfClass("Model") → Humanoid → damage.
+-- Scales enemy heads directly. Simple, works, no freeze.
 local HitboxSub = CombatTab:AddSubTab("Hitbox")
 
 local hitbox = {
     enabled    = false,
     multiplier = 3,
-    headOnly   = false,
+    headOnly   = true,
     showHitbox = false,
 }
 
-local hitboxOverlays = {} -- [player] = { {part=Part, source=BasePart}[] }
+local hitboxOrigSizes = {} -- [part] = originalSize
+
+local function expandHeads()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == LocalPlayer then continue end
+        local char = p.Character
+        if not char then continue end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
+        local head = char:FindFirstChild("Head")
+        if not head then continue end
+        if not hitboxOrigSizes[head] then
+            hitboxOrigSizes[head] = head.Size
+        end
+        local target = hitboxOrigSizes[head] * hitbox.multiplier
+        if head.Size ~= target then
+            head.Size = target
+        end
+        if hitbox.showHitbox then
+            head.Transparency = 0
+        end
+    end
+end
+
+local function shrinkHeads()
+    for part, orig in pairs(hitboxOrigSizes) do
+        if part and part.Parent then
+            part.Size = orig
+        end
+    end
+    hitboxOrigSizes = {}
+end
+
 local hitboxConn = nil
-
-local function buildOverlays(player)
-    if player == LocalPlayer then return end
-    if hitboxOverlays[player] then return end
-    local char = player.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum or hum.Health <= 0 then return end
-
-    local entries = {}
-    for _, part in ipairs(char:GetChildren()) do
-        if not part:IsA("BasePart") then continue end
-        if part.Name == "HumanoidRootPart" then continue end
-        if hitbox.headOnly and part.Name ~= "Head" then continue end
-
-        local ov = Instance.new("Part")
-        ov.Name = "HitboxOv"
-        ov.Size = part.Size * hitbox.multiplier
-        ov.Transparency = hitbox.showHitbox and 0.7 or 1
-        ov.Color = Color3.fromRGB(255, 0, 0)
-        ov.Material = hitbox.showHitbox and Enum.Material.ForceField or Enum.Material.Plastic
-        ov.CanCollide = false
-        ov.CanQuery = true
-        ov.CanTouch = false
-        ov.Massless = true
-        ov.Anchored = false
-        ov.CFrame = part.CFrame
-        ov.Parent = part  -- CHILD of the body part for correct ancestry
-        table.insert(entries, { part = ov, source = part })
-    end
-    hitboxOverlays[player] = entries
-end
-
-local function clearOverlays(player)
-    local entries = hitboxOverlays[player]
-    if not entries then return end
-    for _, e in ipairs(entries) do
-        if e.part and e.part.Parent then e.part:Destroy() end
-    end
-    hitboxOverlays[player] = nil
-end
-
-local function clearAllOverlays()
-    for p in pairs(hitboxOverlays) do clearOverlays(p) end
-end
 
 local function startHitbox()
     if hitboxConn then return end
-    -- build for existing players
-    for _, p in ipairs(Players:GetPlayers()) do buildOverlays(p) end
-
-    hitboxConn = RunService.RenderStepped:Connect(function()
+    hitboxConn = RunService.Heartbeat:Connect(function()
         if HUB.dead or not hitbox.enabled then
-            clearAllOverlays()
+            shrinkHeads()
             if hitboxConn then hitboxConn:Disconnect(); hitboxConn = nil end
             return
         end
-        for player, entries in pairs(hitboxOverlays) do
-            local char = player.Character
-            if not char or not char.Parent then
-                clearOverlays(player)
-            else
-                for i = #entries, 1, -1 do
-                    local e = entries[i]
-                    if e.source and e.source.Parent then
-                        e.part.CFrame = e.source.CFrame
-                        local target = e.source.Size * hitbox.multiplier
-                        if e.part.Size ~= target then e.part.Size = target end
-                    else
-                        e.part:Destroy()
-                        table.remove(entries, i)
-                    end
-                end
-            end
-        end
-        -- add new players
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and not hitboxOverlays[p] then
-                buildOverlays(p)
-            end
-        end
+        expandHeads()
     end)
     track(hitboxConn)
 end
 
--- re-build on respawn
+-- Also remove old overlays from previous approach
 for _, p in ipairs(Players:GetPlayers()) do
-    if p ~= LocalPlayer then
-        track(p.CharacterAdded:Connect(function()
-            clearOverlays(p)
-            task.wait(1)
-            if hitbox.enabled and not HUB.dead then buildOverlays(p) end
-        end))
+    if p ~= LocalPlayer and p.Character then
+        for _, desc in ipairs(p.Character:GetDescendants()) do
+            if desc.Name == "HitboxOv" then desc:Destroy() end
+        end
     end
 end
-track(Players.PlayerAdded:Connect(function(p)
-    if p == LocalPlayer then return end
-    track(p.CharacterAdded:Connect(function()
-        clearOverlays(p)
-        task.wait(1)
-        if hitbox.enabled and not HUB.dead then buildOverlays(p) end
-    end))
-end))
-track(Players.PlayerRemoving:Connect(function(p) clearOverlays(p) end))
-track(LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(2)
-    if hitbox.enabled and not HUB.dead then
-        clearAllOverlays()
-        for _, p in ipairs(Players:GetPlayers()) do buildOverlays(p) end
-    end
-end))
 
 HitboxSub:AddSection("Hitbox Expander")
 HitboxSub:AddToggle({
     Name = "Enabled", Default = false, Flag = "hitbox_enabled",
     Callback = function(v)
         hitbox.enabled = v
-        if v then startHitbox() else clearAllOverlays(); if hitboxConn then hitboxConn:Disconnect(); hitboxConn = nil end end
-        Notify("Hitbox", v and "Expanded — enemies have bigger hitboxes" or "Disabled", v and "Success" or "Error")
+        if v then startHitbox() else shrinkHeads(); if hitboxConn then hitboxConn:Disconnect(); hitboxConn = nil end end
+        Notify("Hitbox", v and "Head hitbox expanded" or "Disabled", v and "Success" or "Error")
     end,
 })
 HitboxSub:AddSlider({
-    Name = "Multiplier", Min = 2, Max = 5, Default = 3, Suffix = "x", Flag = "hitbox_mult",
-    Description = "How much to expand (lower = less noticeable)",
+    Name = "Head Size", Min = 2, Max = 5, Default = 3, Suffix = "x", Flag = "hitbox_mult",
+    Description = "How big enemy heads are",
     Callback = function(v) hitbox.multiplier = v end,
-})
-HitboxSub:AddToggle({
-    Name = "Head Only", Default = false, Flag = "hitbox_headonly",
-    Description = "Only expand heads (all hits = headshots)",
-    Callback = function(v)
-        hitbox.headOnly = v
-        if hitbox.enabled then clearAllOverlays(); for _, p in ipairs(Players:GetPlayers()) do buildOverlays(p) end end
-    end,
-})
-HitboxSub:AddToggle({
-    Name = "Show Hitboxes", Default = false, Flag = "hitbox_show",
-    Description = "Red overlay to visualize expanded area",
-    Callback = function(v)
-        hitbox.showHitbox = v
-        -- update transparency on existing overlays
-        for _, entries in pairs(hitboxOverlays) do
-            for _, e in ipairs(entries) do
-                if e.part and e.part.Parent then
-                    e.part.Transparency = v and 0.7 or 1
-                    e.part.Material = v and Enum.Material.ForceField or Enum.Material.Plastic
-                    e.part.Color = Color3.fromRGB(255, 0, 0)
-                end
-            end
-        end
-    end,
 })
 
 -- ΓöÇΓöÇ Silent Aim (raycast method) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
