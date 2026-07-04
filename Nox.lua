@@ -1328,17 +1328,22 @@ end
 
 local hitboxConn = nil
 
+local function expandPlayer(player)
+    if player == LocalPlayer then return end
+    local char = player.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return end
+    local head = char:FindFirstChild("Head")
+    if not head then return end
+    if hitboxOrigSizes[head] then return end -- already expanded
+    hitboxOrigSizes[head] = head.Size
+    head.Size = head.Size * hitbox.multiplier
+end
+
 local function startHitbox()
-    if hitboxConn then return end
-    hitboxConn = RunService.Heartbeat:Connect(function()
-        if HUB.dead or not hitbox.enabled then
-            shrinkHeads()
-            if hitboxConn then hitboxConn:Disconnect(); hitboxConn = nil end
-            return
-        end
-        expandHeads()
-    end)
-    track(hitboxConn)
+    -- expand all current players ONCE
+    for _, p in ipairs(Players:GetPlayers()) do expandPlayer(p) end
 end
 
 -- Also remove old overlays from previous approach
