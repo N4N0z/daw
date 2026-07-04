@@ -1338,6 +1338,7 @@ local function expandPlayer(player)
     if not head then return end
     if hitboxOrigSizes[head] then return end -- already expanded
     hitboxOrigSizes[head] = head.Size
+    head.Massless = true  -- prevent physics assembly recalc = no freeze
     head.Size = head.Size * hitbox.multiplier
 end
 
