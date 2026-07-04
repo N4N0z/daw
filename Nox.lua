@@ -1510,14 +1510,10 @@ AimSub:AddToggle({
     Description = "Press the key/button to lock instead of holding",
     Callback = function(v) aim.toggleMode = v; toggleLocked = false end,
 })
-            hitboxFovCircle.Position = Vector2.new(mouse.X, mouse.Y)
-            hitboxFovCircle.Radius = hitbox.multiplier * 50
-            hitboxFovCircle.Color = Color3.fromRGB(255, 60, 60)
-        end
-    end
-end))
-
-HitboxSub:AddSection("Hitbox Expander")
+AimSub:AddKeybind({
+    Name = "Alt Aim Key", Default = nil, Flag = "aim_altkey",
+    Callback = function(k) aim.altKey = k; altDown = false end,
+})
 HitboxSub:AddParagraph({
     Title = "How it works",
     Text = "Scales enemy body parts so the weapon raycast hits a bigger target. May cause slight visual jitter on enemies.",
