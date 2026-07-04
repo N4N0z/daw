@@ -1500,21 +1500,10 @@ registerResync(aimPartDropdown, applyAimPart)
 
 AimSub:AddSection("Filters")
 AimSub:AddToggle({ Name = "Team Check", Default = false, Flag = "aim_team", Callback = function(v) aim.teamCheck = v end })
-            if part.Size ~= target then
-                part.Size = target
-            end
-        end
-    end
-end
+AimSub:AddToggle({ Name = "Wall Check (visible only)", Default = false, Flag = "aim_visible", Callback = function(v) aim.visibleCheck = v end })
+AimSub:AddToggle({ Name = "Alive Check", Default = true, Flag = "aim_alive", Callback = function(v) aim.aliveCheck = v end })
 
-local function shrinkAll()
-    for part, orig in pairs(hitboxExpanded) do
-        if part and part.Parent then
-            part.Size = orig
-        end
-    end
-    hitboxExpanded = {}
-end
+AimSub:AddSection("Activation")
 
 local function startHitboxExpand()
     if hitboxExpandConn then return end
