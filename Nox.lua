@@ -126,6 +126,38 @@ MoveSub:AddToggle({
     Callback = function(v) infJump = v end,
 })
 
+MoveSub:AddSection("CFrame Speed")
+local cframeSpeed = { enabled = false, value = 2 }
+local cframeSpeedConn = nil
+
+local function startCFrameSpeed()
+    if cframeSpeedConn then cframeSpeedConn:Disconnect() end
+    cframeSpeedConn = RunService.Heartbeat:Connect(function(dt)
+        if HUB.dead or not cframeSpeed.enabled then return end
+        local hrp = GetHRP()
+        local hum = GetHumanoid()
+        if not hrp or not hum then return end
+        local moveDir = hum.MoveDirection
+        if moveDir.Magnitude < 0.01 then return end
+        hrp.CFrame = hrp.CFrame + (moveDir.Unit * cframeSpeed.value * dt * 60)
+    end)
+end
+
+MoveSub:AddToggle({
+    Name = "CFrame Speed", Default = false, Flag = "cframe_speed_enabled",
+    Description = "Move via CFrame - bypasses most server speed checks",
+    Callback = function(v)
+        cframeSpeed.enabled = v
+        if v then startCFrameSpeed() elseif cframeSpeedConn then cframeSpeedConn:Disconnect(); cframeSpeedConn = nil end
+        Notify("CFrame Speed", v and "Enabled" or "Disabled", v and "Success" or "Error")
+    end,
+})
+MoveSub:AddSlider({
+    Name = "CFrame Speed Value", Min = 1, Max = 50, Default = 2, Suffix = "", Flag = "cframe_speed_value",
+    Description = "Studs per frame (at 60fps)",
+    Callback = function(v) cframeSpeed.value = v end,
+})
+
 MoveSub:AddSection("Gravity")
 MoveSub:AddToggle({
     Name = "Custom Gravity", Default = false, Flag = "grav_enabled",
