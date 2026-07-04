@@ -139,7 +139,10 @@ local function startCFrameSpeed()
         if not hrp or not hum then return end
         local moveDir = hum.MoveDirection
         if moveDir.Magnitude < 0.01 then return end
-        hrp.CFrame = hrp.CFrame + (moveDir.Unit * cframeSpeed.value * dt * 60)
+        local step = moveDir.Unit * cframeSpeed.value * dt * 60
+        hrp.CFrame = hrp.CFrame + step
+        hrp.Velocity = Vector3.new(0, hrp.Velocity.Y, 0)
+        hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
     end)
 end
 
@@ -154,7 +157,7 @@ MoveSub:AddToggle({
 })
 MoveSub:AddSlider({
     Name = "CFrame Speed Value", Min = 1, Max = 50, Default = 2, Suffix = "", Flag = "cframe_speed_value",
-    Description = "Studs per frame (at 60fps)",
+    Description = "Keep low (1-5) to avoid teleport-back",
     Callback = function(v) cframeSpeed.value = v end,
 })
 
