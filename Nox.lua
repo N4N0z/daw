@@ -2455,7 +2455,117 @@ SupportedGames[9461038514] = {
         HitboxSub:AddToggle({ Name = "Team Check", Default = true, Flag = "d_hitbox_team", Callback = function(v) hitbox.teamCheck = v end })
 
 
-        -- ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ Cosmetics (client-side skins/tracers/killfx) ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬
+        -- -- Weapon Mods (DUELIST) --
+        local WeaponSub = CombatTab:AddSubTab("Weapon Mods")
+        local wMod = { rapid = false, noRecoil = false, noSpread = false, infAmmo = false, lobbyShoot = false }
+        local wModConn = nil
+
+        local function startWeaponMods()
+            if wModConn then return end
+            local Weapons = game:GetService("ReplicatedStorage").Events.Weapons
+            wModConn = RunService.Heartbeat:Connect(function()
+                if HUB.dead then return end
+                local char = GetCharacter()
+                if not char then return end
+                for _, tool in pairs(char:GetChildren()) do
+                    if tool:IsA("Tool") then
+                        if wMod.rapid and tool:GetAttribute("FireRate") ~= 9999 then
+                            tool:SetAttribute("FireRate", 9999)
+                        end
+                        if wMod.noRecoil and tool:GetAttribute("Recoil") ~= 0 then
+                            tool:SetAttribute("Recoil", 0)
+                        end
+                        if wMod.noSpread and tool:GetAttribute("Spread") ~= 0 then
+                            tool:SetAttribute("Spread", 0)
+                        end
+                        if wMod.infAmmo then
+                            if tool:GetAttribute("MaxAmmo") ~= 999 then
+                                tool:SetAttribute("MaxAmmo", 999)
+                                tool:SetAttribute("Ammo", 999)
+                            end
+                            local ammo = tool:GetAttribute("Ammo")
+                            if ammo and ammo <= 0 then
+                                Weapons:FireServer("Reload")
+                                tool:SetAttribute("Ammo", 999)
+                            end
+                        end
+                    end
+                end
+                for _, tool in pairs(LocalPlayer.Backpack:GetChildren()) do
+                    if tool:IsA("Tool") then
+                        if wMod.rapid then tool:SetAttribute("FireRate", 9999) end
+                        if wMod.noRecoil then tool:SetAttribute("Recoil", 0) end
+                        if wMod.noSpread then tool:SetAttribute("Spread", 0) end
+                        if wMod.infAmmo then tool:SetAttribute("MaxAmmo", 999); tool:SetAttribute("Ammo", 999) end
+                    end
+                end
+                if wMod.lobbyShoot then LocalPlayer:SetAttribute("CanShoot", true) end
+            end)
+            track(wModConn)
+        end
+
+        local function stopWeaponMods()
+            if wModConn then wModConn:Disconnect(); wModConn = nil end
+        end
+
+        local function checkStartMods()
+            if wMod.rapid or wMod.noRecoil or wMod.noSpread or wMod.infAmmo or wMod.lobbyShoot then
+                startWeaponMods()
+            else
+                stopWeaponMods()
+            end
+        end
+
+        WeaponSub:AddSection("Weapon Mods")
+        WeaponSub:AddToggle({
+            Name = "Rapid Fire", Default = false, Flag = "d_rapid",
+            Description = "Max fire rate (16 shots/sec)",
+            Callback = function(v) wMod.rapid = v; checkStartMods(); Notify("Weapon", v and "Rapid Fire ON" or "Rapid Fire OFF", v and "Success" or "Info") end,
+        })
+        WeaponSub:AddToggle({
+            Name = "No Recoil", Default = false, Flag = "d_norecoil",
+            Callback = function(v) wMod.noRecoil = v; checkStartMods() end,
+        })
+        WeaponSub:AddToggle({
+            Name = "No Spread", Default = false, Flag = "d_nospread",
+            Callback = function(v) wMod.noSpread = v; checkStartMods() end,
+        })
+        WeaponSub:AddToggle({
+            Name = "Infinite Ammo", Default = false, Flag = "d_infammo",
+            Description = "999 mag + instant reload",
+            Callback = function(v) wMod.infAmmo = v; checkStartMods() end,
+        })
+        WeaponSub:AddToggle({
+            Name = "Shoot in Lobby", Default = false, Flag = "d_lobbyshoot",
+            Callback = function(v) wMod.lobbyShoot = v; checkStartMods() end,
+        })
+
+        -- Custom Tracer
+        local tracerNames = (function()
+            local t = {}
+            local tracers = game:GetService("ReplicatedStorage").Assets:FindFirstChild("Tracers")
+            if tracers then for _, v in pairs(tracers:GetChildren()) do t[#t+1] = v.Name end end
+            table.sort(t)
+            return t
+        end)()
+        WeaponSub:AddDropdown({
+            Name = "Custom Tracer", Options = tracerNames, Default = "Default",
+            MaxVisible = 8, Searchable = true, Flag = "d_tracer",
+            Callback = function(v)
+                -- Set tracer on equipped weapon
+                local char = GetCharacter()
+                if char then
+                    for _, tool in pairs(char:GetChildren()) do
+                        if tool:IsA("Tool") then tool:SetAttribute("Tracer", v) end
+                    end
+                end
+                for _, tool in pairs(LocalPlayer.Backpack:GetChildren()) do
+                    if tool:IsA("Tool") then tool:SetAttribute("Tracer", v) end
+                end
+                Notify("Weapon", "Tracer: " .. v, "Success")
+            end,
+        })
+
         local CosmeticsSub = CombatTab:AddSubTab("Cosmetics")
 
         local RS_Assets = game:GetService("ReplicatedStorage").Assets
