@@ -2455,56 +2455,12 @@ SupportedGames[9461038514] = {
         HitboxSub:AddToggle({ Name = "Team Check", Default = true, Flag = "d_hitbox_team", Callback = function(v) hitbox.teamCheck = v end })
 
 
-        -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Cosmetics (client-side skins/tracers/killfx) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
+        -- ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ Cosmetics (client-side skins/tracers/killfx) ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬
         local CosmeticsSub = CombatTab:AddSubTab("Cosmetics")
 
         local RS_Assets = game:GetService("ReplicatedStorage").Assets
-        local cosm = { skinEnabled = false, tracerEnabled = false, killfxEnabled = false }
+        local cosm = {}
         local cosmSkinName = "Default"
-        local cosmTracerName = "Default"
-        local cosmKillfxName = "None"
-
-        CosmeticsSub:AddSection("Tracers")
-        local tracerNames = (function()
-            local t = {}
-            for _, v in pairs(RS_Assets.Tracers:GetChildren()) do t[#t+1] = v.Name end
-            table.sort(t)
-            return t
-        end)()
-        CosmeticsSub:AddDropdown({
-            Name = "Bullet Tracer", Options = tracerNames, Default = "Default",
-            MaxVisible = 8, Searchable = true, Flag = "d_tracer",
-            Callback = function(v)
-                cosmTracerName = v
-                if _G.NoxDuelistCosmetics then _G.NoxDuelistCosmetics.tracer = v end
-                Notify("Cosmetics", "Tracer: " .. v, "Success")
-            end,
-        })
-        CosmeticsSub:AddToggle({
-            Name = "Custom Tracer Enabled", Default = false, Flag = "d_tracer_on",
-            Callback = function(v)
-                cosm.tracerEnabled = v
-                if _G.NoxDuelistCosmetics then _G.NoxDuelistCosmetics.tracerEnabled = v end
-                if v then setupTracerHook() end
-                Notify("Cosmetics", v and "Custom tracer ON" or "Tracer reset", v and "Success" or "Info")
-            end,
-        })
-
-        CosmeticsSub:AddSection("Kill Effects")
-        local killfxNames = (function()
-            local t = {}
-            for _, v in pairs(RS_Assets.KillFX:GetChildren()) do t[#t+1] = v.Name end
-            table.sort(t)
-            return t
-        end)()
-        CosmeticsSub:AddDropdown({
-            Name = "Kill Effect", Options = killfxNames, Default = "None",
-            MaxVisible = 8, Searchable = true, Flag = "d_killfx",
-            Callback = function(v)
-                cosmKillfxName = v
-                Notify("Cosmetics", "Kill FX: " .. v, "Success")
-            end,
-        })
 
         CosmeticsSub:AddSection("Custom Sky")
         local skyNames = (function()
