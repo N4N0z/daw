@@ -1505,14 +1505,8 @@ AimSub:AddToggle({ Name = "Alive Check", Default = true, Flag = "aim_alive", Cal
 
 AimSub:AddSection("Activation")
 AimSub:AddToggle({ Name = "Hold Right-Click", Default = true, Flag = "aim_rmb", Callback = function(v) aim.useRightClick = v end })
-        expandAll()
-    end)
-    track(hitboxExpandConn)
-end
-
-local function stopHitboxExpand()
-    shrinkAll()
-    if hitboxExpandConn then hitboxExpandConn:Disconnect(); hitboxExpandConn = nil end
+AimSub:AddToggle({
+    Name = "Toggle Mode", Default = false, Flag = "aim_toggle",
 end
 
 -- FOV circle visual for showing the area
