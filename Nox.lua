@@ -1338,8 +1338,9 @@ local function expandPlayer(player)
     if not head then return end
     -- Only store original size if we haven't already
     if not hitboxOrigSizes[head] then
-        -- If head is already at a scaled size (from a previous expand), don't re-store
         local curSize = head.Size
+        -- Sanity check: if head is already huge (>3), it's already scaled - don't store
+        if curSize.X > 3 or curSize.Y > 3 then return end
         hitboxOrigSizes[head] = curSize
     end
     local target = hitboxOrigSizes[head] * hitbox.multiplier
@@ -1402,7 +1403,7 @@ end))
 track(LocalPlayer.CharacterAdded:Connect(function()
     task.wait(2)
     if hitbox.enabled and not HUB.dead then
-        hitboxOrigSizes = {}
+        hitboxOrigSizes = {} -- clear ALL cached sizes on map change/respawn
         for _, p in ipairs(Players:GetPlayers()) do expandPlayer(p) end
     end
 end))
