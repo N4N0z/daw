@@ -1518,16 +1518,7 @@ AimSub:AddKeybind({
 AimSub:AddSection("FOV Circle")
 AimSub:AddToggle({
     Name = "Show FOV Circle", Default = true, Flag = "aim_showfov",
-})
-HitboxSub:AddSlider({
-    Name = "Multiplier", Min = 2, Max = 5, Default = 3, Suffix = "x", Flag = "hitbox_mult",
-    Description = "How much to scale enemy parts (lower = less jitter)",
-    Callback = function(v) hitbox.multiplier = v end,
-})
-HitboxSub:AddToggle({
-    Name = "Head Only", Default = false, Flag = "hitbox_headonly",
-    Description = "Only expand the head (less jitter, all headshots)",
-    Callback = function(v)
+    Description = hasDrawing and "Follows the cursor" or "Drawing API unavailable on this executor",
         hitbox.headOnly = v
         shrinkAll()  -- reset so it re-applies with new filter
     end,
