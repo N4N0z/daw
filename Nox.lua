@@ -2921,6 +2921,25 @@ ServerSub:AddParagraph({
 })
 
 local SettingsTab = Window:AddTab({ Name = "Settings", Subtitle = "Config & UI", Icon = "settings" })
+
+-- ── Supported Games Tab ─────────────────────────────────────────────────────
+local GamesTab = Window:AddTab({ Name = "Games", Subtitle = "Supported games", Icon = "list" })
+local GamesSub = GamesTab:AddSubTab("Supported")
+GamesSub:AddSection("Game-Specific Support")
+GamesSub:AddButton({
+    Name = "DUELIST: PvP (BETA)",
+    Description = "Force Speed, Hitbox Expander, ESP, Aimbot — auto-loads when in-game",
+    Callback = function()
+        Window:Notify({ Title = "Games", Content = "Join DUELIST to load the dedicated hub automatically.", Type = "Info", Duration = 3 })
+    end,
+})
+GamesSub:AddSection("Info")
+GamesSub:AddButton({
+    Name = "Current Game: " .. (game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name or "Unknown"),
+    Description = "PlaceId: " .. tostring(game.PlaceId),
+    Callback = function() end,
+})
+
 local SettingsSub = SettingsTab:AddSubTab("General")
 
 if type(Library.SetTheme) == "function" then
