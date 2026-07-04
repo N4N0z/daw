@@ -1514,10 +1514,8 @@ AimSub:AddKeybind({
     Name = "Alt Aim Key", Default = nil, Flag = "aim_altkey",
     Callback = function(k) aim.altKey = k; altDown = false end,
 })
-HitboxSub:AddParagraph({
-    Title = "How it works",
-    Text = "Scales enemy body parts so the weapon raycast hits a bigger target. May cause slight visual jitter on enemies.",
-})
+
+AimSub:AddSection("FOV Circle")
 HitboxSub:AddToggle({
     Name = "Enabled", Default = false, Flag = "hitbox_enabled",
     Callback = function(v)
