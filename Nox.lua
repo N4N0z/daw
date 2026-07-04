@@ -2455,7 +2455,7 @@ SupportedGames[9461038514] = {
         HitboxSub:AddToggle({ Name = "Team Check", Default = true, Flag = "d_hitbox_team", Callback = function(v) hitbox.teamCheck = v end })
 
 
-        -- ── Cosmetics (client-side skins/tracers/killfx) ──
+        -- â”€â”€ Cosmetics (client-side skins/tracers/killfx) â”€â”€
         local CosmeticsSub = CombatTab:AddSubTab("Cosmetics")
 
         local RS_Assets = game:GetService("ReplicatedStorage").Assets
@@ -2519,12 +2519,49 @@ SupportedGames[9461038514] = {
             end))
         end
 
+        -- Re-apply skins when equipping weapon
+        local cosmCarabineSkin = "Default"
+        local cosmPistolSkin = "Default"
+
+        track(LocalPlayer.CharacterAdded:Connect(function(char)
+            task.wait(2)
+            if cosmCarabineSkin ~= "Default" then applySkin("Carabine", cosmCarabineSkin) end
+            if cosmPistolSkin ~= "Default" then applySkin("Pistol", cosmPistolSkin) end
+        end))
+
+        -- Watch for tool equip to re-apply skin
+        track(LocalPlayer.CharacterAdded:Connect(function(char)
+            char.ChildAdded:Connect(function(child)
+                if child:IsA("Tool") then
+                    task.wait(0.2)
+                    if child.Name == "Carabine" and cosmCarabineSkin ~= "Default" then
+                        applySkin("Carabine", cosmCarabineSkin)
+                    elseif child.Name == "Pistol" and cosmPistolSkin ~= "Default" then
+                        applySkin("Pistol", cosmPistolSkin)
+                    end
+                end
+            end)
+        end))
+        -- Also watch current character
+        if GetCharacter() then
+            GetCharacter().ChildAdded:Connect(function(child)
+                if child:IsA("Tool") then
+                    task.wait(0.2)
+                    if child.Name == "Carabine" and cosmCarabineSkin ~= "Default" then
+                        applySkin("Carabine", cosmCarabineSkin)
+                    elseif child.Name == "Pistol" and cosmPistolSkin ~= "Default" then
+                        applySkin("Pistol", cosmPistolSkin)
+                    end
+                end
+            end)
+        end
+
         CosmeticsSub:AddSection("Gun Skins (client-side)")
         CosmeticsSub:AddDropdown({
             Name = "Carabine Skin", Options = getSkinNames("Carabine"), Default = "Default",
             MaxVisible = 8, Searchable = true, Flag = "d_skin_carabine",
             Callback = function(v)
-                cosmSkinName = v
+                cosmCarabineSkin = v
                 applySkin("Carabine", v)
                 Notify("Cosmetics", "Carabine skin: " .. v, "Success")
             end,
@@ -2534,6 +2571,7 @@ SupportedGames[9461038514] = {
             MaxVisible = 8, Searchable = true, Flag = "d_skin_pistol",
             Callback = function(v)
                 applySkin("Pistol", v)
+                cosmPistolSkin = v
                 Notify("Cosmetics", "Pistol skin: " .. v, "Success")
             end,
         })
@@ -2579,6 +2617,38 @@ SupportedGames[9461038514] = {
                 Notify("Cosmetics", "Kill FX: " .. v, "Success")
             end,
         })
+
+        CosmeticsSub:AddSection("Custom Sky")
+        local skyNames = (function()
+            local t = {}
+            for _, v in pairs(RS_Assets.Skies:GetChildren()) do t[#t+1] = v.Name end
+            table.sort(t)
+            return t
+        end)()
+        CosmeticsSub:AddDropdown({
+            Name = "Sky", Options = skyNames, Default = skyNames[1] or "Default",
+            MaxVisible = 8, Searchable = true, Flag = "d_sky",
+            Callback = function(v)
+                local skyModel = RS_Assets.Skies:FindFirstChild(v)
+                if not skyModel then return end
+                -- Remove existing sky
+                local lighting = game:GetService("Lighting")
+                for _, s in pairs(lighting:GetChildren()) do
+                    if s:IsA("Sky") then s:Destroy() end
+                end
+                -- Clone and apply new sky
+                local newSky = skyModel:Clone()
+                if newSky:IsA("Sky") then
+                    newSky.Parent = lighting
+                else
+                    -- Sky might be inside the model
+                    local found = newSky:FindFirstChildOfClass("Sky")
+                    if found then found.Parent = lighting end
+                end
+                Notify("Cosmetics", "Sky: " .. v, "Success")
+            end,
+        })
+
 
         -- Register cleanup so hitbox resets on hub unload/restart
         table.insert(HUB.cleanups, function()
