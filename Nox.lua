@@ -2714,8 +2714,6 @@ function HUB.Unload()
     HUB.dead = true
     flying = false; noclip = false; following = false; aim.enabled = false
     sticky.enabled = false; stickyTarget = nil
-    -- restore hitboxes
-    if _G._NoxHitbox then _G._NoxHitbox.enabled = false end
     silent.enabled = false
     silent.wallbang = false
     pcall(function() Workspace:SetAttribute(WALLBANG_ATTR, nil) end)
