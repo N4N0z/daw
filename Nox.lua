@@ -1519,15 +1519,8 @@ AimSub:AddSection("FOV Circle")
 AimSub:AddToggle({
     Name = "Show FOV Circle", Default = true, Flag = "aim_showfov",
     Description = hasDrawing and "Follows the cursor" or "Drawing API unavailable on this executor",
-        hitbox.headOnly = v
-        shrinkAll()  -- reset so it re-applies with new filter
-    end,
-})
-HitboxSub:AddToggle({
-    Name = "Show Radius", Default = false, Flag = "hitbox_show",
-    Description = "Red circle on crosshair",
-    Callback = function(v) hitbox.showHitbox = v end,
-})
+    Callback = function(v)
+        aim.showFov = v and hasDrawing
 
 AimSub:AddSection("Aimbot")
 AimSub:AddToggle({
