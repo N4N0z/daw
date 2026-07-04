@@ -1,4 +1,4 @@
-local NOX_URL = "https://raw.githubusercontent.com/N4N0z/ddd/refs/heads/main/Nox.lua"
+﻿local NOX_URL = "https://raw.githubusercontent.com/N4N0z/ddd/refs/heads/main/Nox.lua"
 
 local okFetch, source = pcall(game.HttpGet, game, NOX_URL)
 if not okFetch then
@@ -907,7 +907,7 @@ track(RunService.RenderStepped:Connect(function()
         or esp.halo or esp.headCircle or esp.ring
     F.anyDraw = anyDraw
 
-    -- Nothing to render → hide once, then idle. Avoids all per-frame work
+    -- Nothing to render ΓåÆ hide once, then idle. Avoids all per-frame work
     -- (viewport math, GetHRP, per-entity loop) when ESP is off or empty.
     if not (esp.enabled and (anyDraw or esp.chams)) then
         if not F.allHidden then
@@ -1103,7 +1103,7 @@ WorldSub:AddToggle({
 
 local defaultFOV = Camera.FieldOfView
 WorldSub:AddSlider({
-    Name = "Field of View", Min = 30, Max = 120, Default = math.floor(defaultFOV), Suffix = "°", Flag = "fov",
+    Name = "Field of View", Min = 30, Max = 120, Default = math.floor(defaultFOV), Suffix = "┬░", Flag = "fov",
     Callback = function(v) Camera.FieldOfView = v end,
 })
 
@@ -1224,304 +1224,6 @@ track(RunService.RenderStepped:Connect(function()
     Camera.CFrame = Camera.CFrame:Lerp(goal, alpha)
 end))
 
--- ── Sticky Aim ──────────────────────────────────────────────────────────────
--- Locks onto a single target and tracks them until they die, go off-screen,
--- leave FOV, or you release the activation key. Much better for sustained
--- gunfights than the normal "closest every frame" aimbot above.
-local StickySub = CombatTab:AddSubTab("Sticky Aim")
-
-local sticky = {
-    enabled      = false,
-    smoothness   = 8,
-    fov          = 180,
-    part         = "Head",
-    teamCheck    = false,
-    visibleCheck = false,
-    aliveCheck   = true,
-    useRightClick = true,
-    altKey       = nil,
-    toggleMode   = false,
-    showFov      = true,
-    fovColor     = Color3.fromRGB(255, 60, 60),
-    unlockOnKill = true,
-    prediction   = 0,       -- velocity prediction strength (0 = off)
-}
-
-local stickyTarget = nil    -- the locked Player instance
-local stickyMB2, stickyAlt, stickyToggled = false, false, false
-
-local function stickyWanted()
-    if sticky.toggleMode then return stickyToggled end
-    return (sticky.useRightClick and stickyMB2) or (sticky.altKey ~= nil and stickyAlt)
-end
-
-track(UserInputService.InputBegan:Connect(function(input, gp)
-    if HUB.dead then return end
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then stickyMB2 = true end
-    if sticky.altKey and input.KeyCode == sticky.altKey then
-        stickyAlt = true
-        if sticky.toggleMode then stickyToggled = not stickyToggled end
-    elseif input.UserInputType == Enum.UserInputType.MouseButton2 and sticky.toggleMode and sticky.useRightClick then
-        stickyToggled = not stickyToggled
-    end
-end))
-track(UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then stickyMB2 = false end
-    if sticky.altKey and input.KeyCode == sticky.altKey then stickyAlt = false end
-end))
-
-local stickyFovCircle = newDrawing("Circle", { Thickness = 1.5, Filled = false, Visible = false })
-
-local function getStickyAimPart(char)
-    if not char then return nil end
-    return char:FindFirstChild(sticky.part)
-        or char:FindFirstChild("Head")
-        or char:FindFirstChild("HumanoidRootPart")
-end
-
-local function stickyAlive(char)
-    if not sticky.aliveCheck then return true end
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    return hum ~= nil and hum.Health > 0
-end
-
-local function stickyVisible(char, part)
-    if not sticky.visibleCheck then return true end
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = { GetCharacter() }
-    local origin = Camera.CFrame.Position
-    local dir = part.Position - origin
-    local result = Workspace:Raycast(origin, dir, params)
-    if not result then return true end
-    return result.Instance:IsDescendantOf(char)
-end
-
-local function stickyInFov(part)
-    local mouse = UserInputService:GetMouseLocation()
-    local center = Vector2.new(mouse.X, mouse.Y)
-    local sp, onScreen = Camera:WorldToViewportPoint(part.Position)
-    if not onScreen or sp.Z <= 0 then return false end
-    return (Vector2.new(sp.X, sp.Y) - center).Magnitude <= sticky.fov
-end
-
-local function stickyAcquire()
-    local best, bestDist
-    local mouse = UserInputService:GetMouseLocation()
-    local center = Vector2.new(mouse.X, mouse.Y)
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            if sticky.teamCheck and p.Team ~= nil and LocalPlayer.Team ~= nil and p.Team == LocalPlayer.Team then
-                continue
-            end
-            local char = p.Character
-            local part = getStickyAimPart(char)
-            if part and stickyAlive(char) then
-                local sp, onScreen = Camera:WorldToViewportPoint(part.Position)
-                if onScreen and sp.Z > 0 then
-                    local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-                    if d <= sticky.fov and (not bestDist or d < bestDist) then
-                        if stickyVisible(char, part) then
-                            best, bestDist = p, d
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return best
-end
-
-local function stickyValid(player)
-    if not player or not player.Parent then return false end
-    local char = player.Character
-    if not char then return false end
-    local part = getStickyAimPart(char)
-    if not part then return false end
-    if not stickyAlive(char) then return false end
-    if sticky.visibleCheck and not stickyVisible(char, part) then return false end
-    if not stickyInFov(part) then return false end
-    return true
-end
-
-track(RunService.RenderStepped:Connect(function()
-    if HUB.dead then return end
-
-    -- FOV circle
-    if stickyFovCircle then
-        stickyFovCircle.Visible = sticky.enabled and sticky.showFov and hasDrawing
-        if stickyFovCircle.Visible then
-            local mouse = UserInputService:GetMouseLocation()
-            stickyFovCircle.Position = Vector2.new(mouse.X, mouse.Y)
-            stickyFovCircle.Radius = sticky.fov
-            stickyFovCircle.Color = sticky.fovColor
-        end
-    end
-
-    if not sticky.enabled then stickyTarget = nil; return end
-
-    -- release lock when activation drops
-    if not stickyWanted() then
-        stickyTarget = nil
-        return
-    end
-
-    -- validate current lock
-    if stickyTarget and not stickyValid(stickyTarget) then
-        -- unlock on kill notification
-        if sticky.unlockOnKill then
-            local char = stickyTarget.Character
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health <= 0 then
-                -- target died, release
-            end
-        end
-        stickyTarget = nil
-    end
-
-    -- acquire if no lock
-    if not stickyTarget then
-        stickyTarget = stickyAcquire()
-    end
-
-    -- aim at locked target
-    if stickyTarget then
-        local char = stickyTarget.Character
-        local part = getStickyAimPart(char)
-        if part then
-            local aimPos = part.Position
-            -- velocity prediction
-            if sticky.prediction > 0 then
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    aimPos = aimPos + hrp.AssemblyLinearVelocity * (sticky.prediction * 0.016)
-                end
-            end
-            local camPos = Camera.CFrame.Position
-            local goal = CFrame.new(camPos, aimPos)
-            local alpha = math.clamp(1 / math.max(sticky.smoothness, 1), 0, 1)
-            Camera.CFrame = Camera.CFrame:Lerp(goal, alpha)
-        end
-    end
-end))
-
-StickySub:AddSection("Sticky Aim")
-StickySub:AddToggle({
-    Name = "Enabled", Default = false, Flag = "sticky_enabled",
-    Callback = function(v)
-        sticky.enabled = v
-        if not v then stickyTarget = nil; stickyToggled = false end
-        Notify("Sticky Aim", v and "Enabled — locks one target" or "Disabled", v and "Success" or "Error")
-    end,
-})
-StickySub:AddSlider({
-    Name = "Smoothness", Min = 1, Max = 40, Default = 8, Suffix = "",
-    Description = "Higher = smoother camera tracking", Flag = "sticky_smooth",
-    Callback = function(v) sticky.smoothness = v end,
-})
-StickySub:AddSlider({
-    Name = "FOV (px)", Min = 30, Max = 600, Default = 180, Suffix = "", Flag = "sticky_fov",
-    Callback = function(v) sticky.fov = v end,
-})
-StickySub:AddSlider({
-    Name = "Prediction", Min = 0, Max = 20, Default = 0, Suffix = "",
-    Description = "Leads the target by velocity (0 = off)", Flag = "sticky_pred",
-    Callback = function(v) sticky.prediction = v end,
-})
-
-local applyStickyPart = function(v) sticky.part = v end
-local stickyPartDropdown = StickySub:AddDropdown({
-    Name = "Target Part", Options = { "Head", "UpperTorso", "Torso", "HumanoidRootPart" },
-    Default = "Head", MaxVisible = 4, Flag = "sticky_part",
-    Callback = applyStickyPart,
-})
-registerResync(stickyPartDropdown, applyStickyPart)
-
-StickySub:AddSection("Filters")
-StickySub:AddToggle({ Name = "Team Check", Default = false, Flag = "sticky_team", Callback = function(v) sticky.teamCheck = v end })
-StickySub:AddToggle({ Name = "Wall Check", Default = false, Flag = "sticky_visible", Callback = function(v) sticky.visibleCheck = v end })
-StickySub:AddToggle({ Name = "Alive Check", Default = true, Flag = "sticky_alive", Callback = function(v) sticky.aliveCheck = v end })
-StickySub:AddToggle({ Name = "Unlock On Kill", Default = true, Flag = "sticky_unlockdeath", Description = "Drop lock when target dies", Callback = function(v) sticky.unlockOnKill = v end })
-
-StickySub:AddSection("Activation")
-StickySub:AddToggle({ Name = "Hold Right-Click", Default = true, Flag = "sticky_rmb", Callback = function(v) sticky.useRightClick = v end })
-StickySub:AddToggle({
-    Name = "Toggle Mode", Default = false, Flag = "sticky_toggle",
-    Description = "Press to lock/unlock instead of holding",
-    Callback = function(v) sticky.toggleMode = v; stickyToggled = false; stickyTarget = nil end,
-})
-StickySub:AddKeybind({
-    Name = "Alt Key", Default = nil, Flag = "sticky_altkey",
-    Callback = function(k) sticky.altKey = k; stickyAlt = false end,
-})
-
-StickySub:AddSection("FOV Circle")
-StickySub:AddToggle({
-    Name = "Show FOV Circle", Default = true, Flag = "sticky_showfov",
-    Callback = function(v) sticky.showFov = v and hasDrawing end,
-})
-StickySub:AddColorPicker({
-    Name = "FOV Color", Default = Color3.fromRGB(255, 60, 60), Flag = "sticky_fovcolor",
-    Callback = function(c) sticky.fovColor = c end,
-})
-
--- ── Hitbox Expander ─────────────────────────────────────────────────────────
--- This game has server-authoritative part sizes AND the weapon script caches
--- its Raycast reference (bypassing __namecall hooks). Hitbox expansion is not
--- possible on this game. Use Aimbot/Sticky Aim + low smoothness instead for
--- the same effect — guaranteed hits when aiming near enemies.
-
-AimSub:AddSection("Aimbot")
-AimSub:AddToggle({
-    Name = "Enabled", Default = false, Flag = "aim_enabled",
-    Callback = function(v)
-        aim.enabled = v
-        if not v then toggleLocked = false end
-        Notify("Aimbot", v and "Enabled (hold Right-Click)" or "Disabled", v and "Success" or "Error")
-    end,
-})
-AimSub:AddSlider({
-    Name = "Smoothness", Min = 1, Max = 40, Default = 12, Suffix = "",
-    Description = "Higher = smoother / slower lock", Flag = "aim_smooth",
-    Callback = function(v) aim.smoothness = v end,
-})
-AimSub:AddSlider({
-    Name = "FOV (px)", Min = 30, Max = 600, Default = 150, Suffix = "", Flag = "aim_fov",
-    Callback = function(v) aim.fov = v end,
-})
-
-local applyAimPart = function(v) aim.part = v end
-local aimPartDropdown = AimSub:AddDropdown({
-    Name = "Target Part", Options = { "Head", "UpperTorso", "Torso", "HumanoidRootPart" },
-    Default = "Head", MaxVisible = 4, Flag = "aim_part",
-    Callback = applyAimPart,
-})
-registerResync(aimPartDropdown, applyAimPart)
-
-AimSub:AddSection("Filters")
-AimSub:AddToggle({ Name = "Team Check", Default = false, Flag = "aim_team", Callback = function(v) aim.teamCheck = v end })
-AimSub:AddToggle({ Name = "Wall Check (visible only)", Default = false, Flag = "aim_visible", Callback = function(v) aim.visibleCheck = v end })
-AimSub:AddToggle({ Name = "Alive Check", Default = true, Flag = "aim_alive", Callback = function(v) aim.aliveCheck = v end })
-
-AimSub:AddSection("Activation")
-AimSub:AddToggle({ Name = "Hold Right-Click", Default = true, Flag = "aim_rmb", Callback = function(v) aim.useRightClick = v end })
-AimSub:AddToggle({
-    Name = "Toggle Mode", Default = false, Flag = "aim_toggle",
-    Description = "Press the key/button to lock instead of holding",
-    Callback = function(v) aim.toggleMode = v; toggleLocked = false end,
-})
-AimSub:AddKeybind({
-    Name = "Alt Aim Key", Default = nil, Flag = "aim_altkey",
-    Callback = function(k) aim.altKey = k; altDown = false end,
-})
-
-AimSub:AddSection("FOV Circle")
-AimSub:AddToggle({
-    Name = "Show FOV Circle", Default = true, Flag = "aim_showfov",
-    Description = hasDrawing and "Follows the cursor" or "Drawing API unavailable on this executor",
-    Callback = function(v)
-        aim.showFov = v and hasDrawing
-
 AimSub:AddSection("Aimbot")
 AimSub:AddToggle({
     Name = "Enabled", Default = false, Flag = "aim_enabled",
@@ -1580,7 +1282,172 @@ AimSub:AddColorPicker({
     Callback = function(c) aim.fovColor = c end,
 })
 
--- ── Silent Aim (raycast method) ─────────────────────────────────────────────
+-- ── Hitbox Expander ─────────────────────────────────────────────────────────
+-- Adds invisible enlarged parts inside enemy characters. Parts are non-anchored
+-- and massless (no freeze). CFrame updated every frame. The weapon raycast hits
+-- these bigger parts → FindFirstAncestorOfClass("Model") → Humanoid → damage.
+local HitboxSub = CombatTab:AddSubTab("Hitbox")
+
+local hitbox = {
+    enabled    = false,
+    multiplier = 3,
+    headOnly   = false,
+    showHitbox = false,
+}
+
+local hitboxOverlays = {} -- [player] = { {part=Part, source=BasePart}[] }
+local hitboxConn = nil
+
+local function buildOverlays(player)
+    if player == LocalPlayer then return end
+    if hitboxOverlays[player] then return end
+    local char = player.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return end
+
+    local entries = {}
+    for _, part in ipairs(char:GetChildren()) do
+        if not part:IsA("BasePart") then continue end
+        if part.Name == "HumanoidRootPart" then continue end
+        if hitbox.headOnly and part.Name ~= "Head" then continue end
+
+        local ov = Instance.new("Part")
+        ov.Name = part.Name -- same name so headshot detection works
+        ov.Size = part.Size * hitbox.multiplier
+        ov.Transparency = hitbox.showHitbox and 0.7 or 1
+        ov.Color = Color3.fromRGB(255, 0, 0)
+        ov.Material = hitbox.showHitbox and Enum.Material.ForceField or Enum.Material.Plastic
+        ov.CanCollide = false
+        ov.CanQuery = true
+        ov.CanTouch = false
+        ov.Massless = true
+        ov.Anchored = false
+        ov.CFrame = part.CFrame
+        ov.Parent = char
+        table.insert(entries, { part = ov, source = part })
+    end
+    hitboxOverlays[player] = entries
+end
+
+local function clearOverlays(player)
+    local entries = hitboxOverlays[player]
+    if not entries then return end
+    for _, e in ipairs(entries) do
+        if e.part and e.part.Parent then e.part:Destroy() end
+    end
+    hitboxOverlays[player] = nil
+end
+
+local function clearAllOverlays()
+    for p in pairs(hitboxOverlays) do clearOverlays(p) end
+end
+
+local function startHitbox()
+    if hitboxConn then return end
+    -- build for existing players
+    for _, p in ipairs(Players:GetPlayers()) do buildOverlays(p) end
+
+    hitboxConn = RunService.RenderStepped:Connect(function()
+        if HUB.dead or not hitbox.enabled then
+            clearAllOverlays()
+            if hitboxConn then hitboxConn:Disconnect(); hitboxConn = nil end
+            return
+        end
+        for player, entries in pairs(hitboxOverlays) do
+            local char = player.Character
+            if not char or not char.Parent then
+                clearOverlays(player)
+            else
+                for i = #entries, 1, -1 do
+                    local e = entries[i]
+                    if e.source and e.source.Parent then
+                        e.part.CFrame = e.source.CFrame
+                        local target = e.source.Size * hitbox.multiplier
+                        if e.part.Size ~= target then e.part.Size = target end
+                    else
+                        e.part:Destroy()
+                        table.remove(entries, i)
+                    end
+                end
+            end
+        end
+        -- add new players
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and not hitboxOverlays[p] then
+                buildOverlays(p)
+            end
+        end
+    end)
+    track(hitboxConn)
+end
+
+-- re-build on respawn
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then
+        track(p.CharacterAdded:Connect(function()
+            clearOverlays(p)
+            task.wait(1)
+            if hitbox.enabled and not HUB.dead then buildOverlays(p) end
+        end))
+    end
+end
+track(Players.PlayerAdded:Connect(function(p)
+    if p == LocalPlayer then return end
+    track(p.CharacterAdded:Connect(function()
+        clearOverlays(p)
+        task.wait(1)
+        if hitbox.enabled and not HUB.dead then buildOverlays(p) end
+    end))
+end))
+track(Players.PlayerRemoving:Connect(function(p) clearOverlays(p) end))
+track(LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(2)
+    if hitbox.enabled and not HUB.dead then
+        clearAllOverlays()
+        for _, p in ipairs(Players:GetPlayers()) do buildOverlays(p) end
+    end
+end))
+
+HitboxSub:AddSection("Hitbox Expander")
+HitboxSub:AddToggle({
+    Name = "Enabled", Default = false, Flag = "hitbox_enabled",
+    Callback = function(v)
+        hitbox.enabled = v
+        if v then startHitbox() else clearAllOverlays(); if hitboxConn then hitboxConn:Disconnect(); hitboxConn = nil end end
+        Notify("Hitbox", v and "Expanded — enemies have bigger hitboxes" or "Disabled", v and "Success" or "Error")
+    end,
+})
+HitboxSub:AddSlider({
+    Name = "Multiplier", Min = 2, Max = 5, Default = 3, Suffix = "x", Flag = "hitbox_mult",
+    Description = "How much to expand (lower = less noticeable)",
+    Callback = function(v) hitbox.multiplier = v end,
+})
+HitboxSub:AddToggle({
+    Name = "Head Only", Default = false, Flag = "hitbox_headonly",
+    Description = "Only expand heads (all hits = headshots)",
+    Callback = function(v)
+        hitbox.headOnly = v
+        if hitbox.enabled then clearAllOverlays(); for _, p in ipairs(Players:GetPlayers()) do buildOverlays(p) end end
+    end,
+})
+HitboxSub:AddToggle({
+    Name = "Show Hitboxes", Default = false, Flag = "hitbox_show",
+    Description = "Red overlay to visualize expanded area",
+    Callback = function(v)
+        hitbox.showHitbox = v
+        -- update transparency on existing overlays
+        for _, entries in pairs(hitboxOverlays) do
+            for _, e in ipairs(entries) do
+                e.part.Transparency = v and 0.7 or 1
+                e.part.Material = v and Enum.Material.ForceField or Enum.Material.Plastic
+                e.part.Color = Color3.fromRGB(255, 0, 0)
+            end
+        end
+    end,
+})
+
+-- ΓöÇΓöÇ Silent Aim (raycast method) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 -- KILLSTREAK ships an internal aim-assist module at
 -- PlayerScripts.Client.Handicap.Systems.SilentAim. The weapon fire code
 -- (WeaponAttack_FireBullet) asks SilentAim:getInstance():getPivotCFrame(camera)
@@ -1766,23 +1633,23 @@ local function applySilent()
 end
 
 if not SUPPORTED then
-    SilentSub:AddSection("Silent Aim — Raycast")
+    SilentSub:AddSection("Silent Aim ΓÇö Raycast")
     SilentSub:AddParagraph({
         Title = "Unavailable",
         Content = "This game has no internal raycast aim module. Use the Aimbot tab instead.",
     })
 else
-    SilentSub:AddSection("Silent Aim — Raycast")
+    SilentSub:AddSection("Silent Aim ΓÇö Raycast")
     SilentSub:AddParagraph({
         Title = "Raycast method",
-        Content = "Redirects every shot's bullet ray onto the closest enemy inside the FOV. No camera movement — just fire and it locks. Turn on Wall Bang below to shoot through walls and lock enemies behind cover.",
+        Content = "Redirects every shot's bullet ray onto the closest enemy inside the FOV. No camera movement ΓÇö just fire and it locks. Turn on Wall Bang below to shoot through walls and lock enemies behind cover.",
     })
     SilentSub:AddToggle({
         Name = "Enabled", Default = false, Flag = "silent_enabled",
         Callback = function(v)
             silent.enabled = v
             applySilent()
-            Notify("Silent Aim", v and "Enabled — fire to lock" or "Disabled", v and "Success" or "Error")
+            Notify("Silent Aim", v and "Enabled ΓÇö fire to lock" or "Disabled", v and "Success" or "Error")
         end,
     })
     SilentSub:AddSlider({
@@ -1808,7 +1675,7 @@ else
         Callback = function(v)
             silent.wallbang = v
             applySilent()
-            Notify("Silent Aim", v and "Wallbang ON — shots pierce walls" or "Wallbang OFF", v and "Success" or "Error")
+            Notify("Silent Aim", v and "Wallbang ON ΓÇö shots pierce walls" or "Wallbang OFF", v and "Success" or "Error")
         end,
     })
 
@@ -1855,13 +1722,13 @@ else
     end))
 end
 
--- ════════════════════════════════════════════════════════════════════════════
+-- ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 -- GAME SUPPORT FRAMEWORK
 -- The universal tabs above load in every game. Each entry in SupportedGames is
 -- keyed by universe GameId; if the current game matches, its Build() runs and
 -- adds a dedicated tab with that game's features. Unsupported games simply run
 -- the universal hub. To support a new game, add another SupportedGames[id].
--- ════════════════════════════════════════════════════════════════════════════
+-- ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 local SupportedGames = {}
 
 -- executor signal-fire (different executors expose it under different names)
@@ -1870,7 +1737,7 @@ local fireSignal = firesignal
     or replicatesignal
 local HAS_FIRESIGNAL = type(fireSignal) == "function"
 
--- ─── Looksmax & Mog  (universe 10126164619) ─────────────────────────────────
+-- ΓöÇΓöÇΓöÇ Looksmax & Mog  (universe 10126164619) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 SupportedGames[10126164619] = {
     Name = "Looksmax & Mog",
     Build = function()
@@ -2229,7 +2096,7 @@ SupportedGames[10126164619] = {
             if autoMog then solveMogBattle(pg) end   -- every mog-battle minigame
         end))
 
-        -- ── Auto Queue ──────────────────────────────────────────────────────
+        -- ΓöÇΓöÇ Auto Queue ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
         -- The whole matchmaking flow (MoggingController) collapses to one
         -- client->server call:
         --     F.ClientToServer.Fire("StartMogging", { Mode = "1v1"/"2v2", DeviceType })
@@ -2321,7 +2188,7 @@ SupportedGames[10126164619] = {
             end
         end))
 
-        -- ── Auto Gym Farm ───────────────────────────────────────────────────
+        -- ΓöÇΓöÇ Auto Gym Farm ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
         -- A workout can ONLY be started by the machine's server-side ProximityPrompt
         -- (there is no "start workout" remote). So we walk to a FREE machine, hold its
         -- prompt (fireproximityprompt), then let the rep solver bank Perfect reps.
@@ -2480,7 +2347,7 @@ SupportedGames[10126164619] = {
         AutoClickSub:AddSection("Supported Game")
         AutoClickSub:AddParagraph({
             Title = "\u{2705} Looksmax & Mog",
-            Text = "Game detected and supported. These cheats only appear here — other games fall back to the universal hub.",
+            Text = "Game detected and supported. These cheats only appear here ΓÇö other games fall back to the universal hub.",
         })
 
         AutoClickSub:AddSection("Auto Click")
@@ -2586,7 +2453,7 @@ do
             Notify("Game Support", "Error loading " .. entry.Name .. " features", "Error", 5)
         end
     else
-        Notify("Universal Mode", "No specific support for this game yet — universal features only", "Info", 4)
+        Notify("Universal Mode", "No specific support for this game yet ΓÇö universal features only", "Info", 4)
     end
 end
 
@@ -2673,7 +2540,7 @@ end
 
 SettingsSub:AddSection("UI")
 
--- ── Misc: performance ───────────────────────────────────────────────────────
+-- ΓöÇΓöÇ Misc: performance ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 local MiscSub = SettingsTab:AddSubTab("Misc")
 local setFPS = setfpscap or (getgenv and getgenv().setfpscap) or set_fps_cap
 local HAS_FPS = type(setFPS) == "function"
@@ -2713,7 +2580,6 @@ function HUB.Unload()
     if HUB.dead then return end
     HUB.dead = true
     flying = false; noclip = false; following = false; aim.enabled = false
-    sticky.enabled = false; stickyTarget = nil
     silent.enabled = false
     silent.wallbang = false
     pcall(function() Workspace:SetAttribute(WALLBANG_ATTR, nil) end)
