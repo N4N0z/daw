@@ -1499,8 +1499,7 @@ local aimPartDropdown = AimSub:AddDropdown({
 registerResync(aimPartDropdown, applyAimPart)
 
 AimSub:AddSection("Filters")
-            end
-            local target = hitboxExpanded[part] * hitbox.multiplier
+AimSub:AddToggle({ Name = "Team Check", Default = false, Flag = "aim_team", Callback = function(v) aim.teamCheck = v end })
             if part.Size ~= target then
                 part.Size = target
             end
