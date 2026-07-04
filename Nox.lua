@@ -218,6 +218,11 @@ track(LocalPlayer.CharacterAdded:Connect(function(char)
     if HUB.dead then return end
     if wsEnabled then hum.WalkSpeed = wsValue end
     if jpEnabled then hum.UseJumpPower = true; hum.JumpPower = jpValue end
+    if attrSpeed.enabled then
+        task.wait(1)
+        local h = GetHumanoid()
+        if h then h:SetAttribute("SpeedBonus", attrSpeed.value) end
+    end
 end))
 
 track(UserInputService.JumpRequest:Connect(function()
