@@ -1504,15 +1504,7 @@ AimSub:AddToggle({ Name = "Wall Check (visible only)", Default = false, Flag = "
 AimSub:AddToggle({ Name = "Alive Check", Default = true, Flag = "aim_alive", Callback = function(v) aim.aliveCheck = v end })
 
 AimSub:AddSection("Activation")
-
-local function startHitboxExpand()
-    if hitboxExpandConn then return end
-    hitboxExpandConn = RunService.Heartbeat:Connect(function()
-        if HUB.dead or not hitbox.enabled then
-            shrinkAll()
-            if hitboxExpandConn then hitboxExpandConn:Disconnect(); hitboxExpandConn = nil end
-            return
-        end
+AimSub:AddToggle({ Name = "Hold Right-Click", Default = true, Flag = "aim_rmb", Callback = function(v) aim.useRightClick = v end })
         expandAll()
     end)
     track(hitboxExpandConn)
