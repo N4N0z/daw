@@ -1439,9 +1439,11 @@ HitboxSub:AddToggle({
         -- update transparency on existing overlays
         for _, entries in pairs(hitboxOverlays) do
             for _, e in ipairs(entries) do
-                e.part.Transparency = v and 0.7 or 1
-                e.part.Material = v and Enum.Material.ForceField or Enum.Material.Plastic
-                e.part.Color = Color3.fromRGB(255, 0, 0)
+                if e.part and e.part.Parent then
+                    e.part.Transparency = v and 0.7 or 1
+                    e.part.Material = v and Enum.Material.ForceField or Enum.Material.Plastic
+                    e.part.Color = Color3.fromRGB(255, 0, 0)
+                end
             end
         end
     end,
