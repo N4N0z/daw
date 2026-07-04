@@ -1516,13 +1516,8 @@ AimSub:AddKeybind({
 })
 
 AimSub:AddSection("FOV Circle")
-HitboxSub:AddToggle({
-    Name = "Enabled", Default = false, Flag = "hitbox_enabled",
-    Callback = function(v)
-        hitbox.enabled = v
-        if v then startHitboxExpand() else stopHitboxExpand() end
-        Notify("Hitbox", v and "Expanded — enemies are bigger targets" or "Disabled", v and "Success" or "Error")
-    end,
+AimSub:AddToggle({
+    Name = "Show FOV Circle", Default = true, Flag = "aim_showfov",
 })
 HitboxSub:AddSlider({
     Name = "Multiplier", Min = 2, Max = 5, Default = 3, Suffix = "x", Flag = "hitbox_mult",
