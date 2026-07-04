@@ -1351,6 +1351,25 @@ end
 local function startHitbox()
     -- expand all current players ONCE
     for _, p in ipairs(Players:GetPlayers()) do expandPlayer(p) end
+    -- periodic re-check every 2s to catch new players / respawns
+    if not hitboxConn then
+        hitboxConn = RunService.Heartbeat:Connect(function()
+            if HUB.dead or not hitbox.enabled then
+                if hitboxConn then hitboxConn:Disconnect(); hitboxConn = nil end
+                return
+            end
+        end)
+        track(hitboxConn)
+    end
+    -- background loop to catch missed players
+    task.spawn(function()
+        while hitbox.enabled and not HUB.dead do
+            for _, p in ipairs(Players:GetPlayers()) do
+                expandPlayer(p)
+            end
+            task.wait(2)
+        end
+    end)
 end
 
 -- Clean old overlays
