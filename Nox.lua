@@ -1393,7 +1393,17 @@ HitboxSub:AddToggle({
 HitboxSub:AddSlider({
     Name = "Head Size", Min = 2, Max = 5, Default = 3, Suffix = "x", Flag = "hitbox_mult",
     Description = "How big enemy heads are",
-    Callback = function(v) hitbox.multiplier = v end,
+    Callback = function(v)
+        hitbox.multiplier = v
+        -- update all currently expanded heads in real time
+        if hitbox.enabled then
+            for part, orig in pairs(hitboxOrigSizes) do
+                if part and part.Parent then
+                    part.Size = orig * v
+                end
+            end
+        end
+    end,
 })
 
 -- ΓöÇΓöÇ Silent Aim (raycast method) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
