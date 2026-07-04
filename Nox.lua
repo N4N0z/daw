@@ -1387,6 +1387,11 @@ end
 for _, p in ipairs(Players:GetPlayers()) do
     if p ~= LocalPlayer then
         track(p.CharacterAdded:Connect(function()
+            -- clear old head reference for this player
+            if p.Character then
+                local oldHead = p.Character:FindFirstChild("Head")
+                if oldHead then hitboxOrigSizes[oldHead] = nil end
+            end
             task.wait(1)
             if hitbox.enabled and not HUB.dead then expandPlayer(p) end
         end))
