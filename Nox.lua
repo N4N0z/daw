@@ -1440,9 +1440,11 @@ HitboxSub:AddSlider({
         end
     end,
 })
-
--- ΓöÇΓöÇ Silent Aim (raycast method) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
--- KILLSTREAK ships an internal aim-assist module at
+HitboxSub:AddToggle({
+    Name = "Team Check", Default = true, Flag = "hitbox_team",
+    Description = "Don't expand teammate heads",
+    Callback = function(v) hitbox.teamCheck = v end,
+})
 -- PlayerScripts.Client.Handicap.Systems.SilentAim. The weapon fire code
 -- (WeaponAttack_FireBullet) asks SilentAim:getInstance():getPivotCFrame(camera)
 -- every shot and, when it returns a CFrame, casts the bullet RAY down that
