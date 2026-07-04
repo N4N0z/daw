@@ -1492,20 +1492,13 @@ AimSub:AddSlider({
 
 local applyAimPart = function(v) aim.part = v end
 local aimPartDropdown = AimSub:AddDropdown({
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p == LocalPlayer then continue end
-        local char = p.Character
-        if not char then continue end
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hum or hum.Health <= 0 then continue end
+    Name = "Target Part", Options = { "Head", "UpperTorso", "Torso", "HumanoidRootPart" },
+    Default = "Head", MaxVisible = 4, Flag = "aim_part",
+    Callback = applyAimPart,
+})
+registerResync(aimPartDropdown, applyAimPart)
 
-        for _, part in ipairs(char:GetChildren()) do
-            if not part:IsA("BasePart") then continue end
-            if part.Name == "HumanoidRootPart" then continue end
-            if hitbox.headOnly and part.Name ~= "Head" then continue end
-
-            if not hitboxExpanded[part] then
-                hitboxExpanded[part] = part.Size
+AimSub:AddSection("Filters")
             end
             local target = hitboxExpanded[part] * hitbox.multiplier
             if part.Size ~= target then
