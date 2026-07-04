@@ -2454,6 +2454,132 @@ SupportedGames[9461038514] = {
         })
         HitboxSub:AddToggle({ Name = "Team Check", Default = true, Flag = "d_hitbox_team", Callback = function(v) hitbox.teamCheck = v end })
 
+
+        -- ── Cosmetics (client-side skins/tracers/killfx) ──
+        local CosmeticsSub = CombatTab:AddSubTab("Cosmetics")
+
+        local RS_Assets = game:GetService("ReplicatedStorage").Assets
+        local cosm = { skinEnabled = false, tracerEnabled = false, killfxEnabled = false }
+        local cosmSkinName = "Default"
+        local cosmTracerName = "Default"
+        local cosmKillfxName = "None"
+
+        -- Get skin names
+        local function getSkinNames(weapon)
+            local folder = RS_Assets.Skins:FindFirstChild(weapon)
+            if not folder then return {"Default"} end
+            local names = {"Default"}
+            for _, v in ipairs(folder:GetChildren()) do
+                if v.Name ~= "Default" then table.insert(names, v.Name) end
+            end
+            table.sort(names)
+            return names
+        end
+
+        local function applySkin(weapon, skinName)
+            if skinName == "Default" then return end
+            local skinModel = RS_Assets.Skins:FindFirstChild(weapon) and RS_Assets.Skins[weapon]:FindFirstChild(skinName)
+            if not skinModel then return end
+            local tool = LocalPlayer.Backpack:FindFirstChild(weapon) or (GetCharacter() and GetCharacter():FindFirstChild(weapon))
+            if not tool then return end
+            local skinParts = {}
+            for _, v in pairs(skinModel:GetDescendants()) do
+                if v:IsA("MeshPart") then skinParts[v.Name] = v end
+            end
+            for _, v in pairs(tool:GetDescendants()) do
+                if v:IsA("MeshPart") and skinParts[v.Name] then
+                    local sp = skinParts[v.Name]
+                    pcall(function()
+                        v.MeshId = sp.MeshId
+                        v.TextureID = sp.TextureID
+                        v.Color = sp.Color
+                        v.Material = sp.Material
+                    end)
+                end
+            end
+        end
+
+        -- Tracer hook
+        local function setupTracerHook()
+            if _G._noxTracerHooked then return end
+            _G._noxTracerHooked = true
+            _G.NoxDuelistCosmetics = { tracer = cosmTracerName, tracerEnabled = cosm.tracerEnabled }
+            local Weapons = game:GetService("ReplicatedStorage").Events.Weapons
+            local oldNamecall
+            oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+                local method = getnamecallmethod()
+                if method == "FireServer" and self == Weapons then
+                    local args = {...}
+                    if args[1] == "ReplicateTracer" and _G.NoxDuelistCosmetics.tracerEnabled then
+                        args[2] = _G.NoxDuelistCosmetics.tracer
+                        return oldNamecall(self, unpack(args))
+                    end
+                end
+                return oldNamecall(self, ...)
+            end))
+        end
+
+        CosmeticsSub:AddSection("Gun Skins (client-side)")
+        CosmeticsSub:AddDropdown({
+            Name = "Carabine Skin", Options = getSkinNames("Carabine"), Default = "Default",
+            MaxVisible = 8, Searchable = true, Flag = "d_skin_carabine",
+            Callback = function(v)
+                cosmSkinName = v
+                applySkin("Carabine", v)
+                Notify("Cosmetics", "Carabine skin: " .. v, "Success")
+            end,
+        })
+        CosmeticsSub:AddDropdown({
+            Name = "Pistol Skin", Options = getSkinNames("Pistol"), Default = "Default",
+            MaxVisible = 8, Searchable = true, Flag = "d_skin_pistol",
+            Callback = function(v)
+                applySkin("Pistol", v)
+                Notify("Cosmetics", "Pistol skin: " .. v, "Success")
+            end,
+        })
+
+        CosmeticsSub:AddSection("Tracers")
+        local tracerNames = (function()
+            local t = {}
+            for _, v in pairs(RS_Assets.Tracers:GetChildren()) do t[#t+1] = v.Name end
+            table.sort(t)
+            return t
+        end)()
+        CosmeticsSub:AddDropdown({
+            Name = "Bullet Tracer", Options = tracerNames, Default = "Default",
+            MaxVisible = 8, Searchable = true, Flag = "d_tracer",
+            Callback = function(v)
+                cosmTracerName = v
+                if _G.NoxDuelistCosmetics then _G.NoxDuelistCosmetics.tracer = v end
+                Notify("Cosmetics", "Tracer: " .. v, "Success")
+            end,
+        })
+        CosmeticsSub:AddToggle({
+            Name = "Custom Tracer Enabled", Default = false, Flag = "d_tracer_on",
+            Callback = function(v)
+                cosm.tracerEnabled = v
+                if _G.NoxDuelistCosmetics then _G.NoxDuelistCosmetics.tracerEnabled = v end
+                if v then setupTracerHook() end
+                Notify("Cosmetics", v and "Custom tracer ON" or "Tracer reset", v and "Success" or "Info")
+            end,
+        })
+
+        CosmeticsSub:AddSection("Kill Effects")
+        local killfxNames = (function()
+            local t = {}
+            for _, v in pairs(RS_Assets.KillFX:GetChildren()) do t[#t+1] = v.Name end
+            table.sort(t)
+            return t
+        end)()
+        CosmeticsSub:AddDropdown({
+            Name = "Kill Effect", Options = killfxNames, Default = "None",
+            MaxVisible = 8, Searchable = true, Flag = "d_killfx",
+            Callback = function(v)
+                cosmKillfxName = v
+                Notify("Cosmetics", "Kill FX: " .. v, "Success")
+            end,
+        })
+
         -- Register cleanup so hitbox resets on hub unload/restart
         table.insert(HUB.cleanups, function()
             shrinkHeads()
