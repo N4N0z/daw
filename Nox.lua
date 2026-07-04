@@ -126,6 +126,60 @@ MoveSub:AddToggle({
     Callback = function(v) infJump = v end,
 })
 
+MoveSub:AddSection("Force Speed")
+local forceSpeed = { enabled = false, value = 28 }
+local forceSpeedConn = nil
+local forceSpeedOrigConn = nil
+
+local function startForceSpeed()
+    pcall(function()
+        local conns = getconnections(RunService.RenderStepped)
+        for _, c in ipairs(conns) do
+            local src = ""
+            pcall(function() src = debug.info(c.Function, "s") end)
+            if src and src:find("CharacterHandler") then
+                c:Disable()
+                forceSpeedOrigConn = c
+                break
+            end
+        end
+    end)
+    if forceSpeedConn then forceSpeedConn:Disconnect() end
+    forceSpeedConn = RunService.RenderStepped:Connect(function(dt)
+        if HUB.dead or not forceSpeed.enabled then return end
+        local hum = GetHumanoid()
+        if not hum then return end
+        if hum.MoveDirection.Magnitude > 0.01 then
+            hum.WalkSpeed = forceSpeed.value
+        else
+            hum.WalkSpeed = math.max(hum.WalkSpeed - 70 * dt, 0)
+        end
+    end)
+end
+
+local function stopForceSpeed()
+    if forceSpeedConn then forceSpeedConn:Disconnect(); forceSpeedConn = nil end
+    if forceSpeedOrigConn then
+        pcall(function() forceSpeedOrigConn:Enable() end)
+        forceSpeedOrigConn = nil
+    end
+end
+
+MoveSub:AddToggle({
+    Name = "Force Speed", Default = false, Flag = "force_speed_enabled",
+    Description = "Disables game speed controller (needs getconnections)",
+    Callback = function(v)
+        forceSpeed.enabled = v
+        if v then startForceSpeed() else stopForceSpeed() end
+        Notify("Force Speed", v and ("Enabled @ " .. forceSpeed.value) or "Disabled", v and "Success" or "Error")
+    end,
+})
+MoveSub:AddSlider({
+    Name = "Force Speed Value", Min = 16, Max = 60, Default = 28, Suffix = "", Flag = "force_speed_value",
+    Description = "28 safe for DUELIST, higher may TP-back",
+    Callback = function(v) forceSpeed.value = v end,
+})
+
 MoveSub:AddSection("CFrame Speed")
 local cframeSpeed = { enabled = false, value = 2 }
 local cframeSpeedConn = nil
@@ -148,7 +202,7 @@ end
 
 MoveSub:AddToggle({
     Name = "CFrame Speed", Default = false, Flag = "cframe_speed_enabled",
-    Description = "Move via CFrame - bypasses most server speed checks",
+    Description = "Move via CFrame - for games without server checks",
     Callback = function(v)
         cframeSpeed.enabled = v
         if v then startCFrameSpeed() elseif cframeSpeedConn then cframeSpeedConn:Disconnect(); cframeSpeedConn = nil end
@@ -159,40 +213,6 @@ MoveSub:AddSlider({
     Name = "CFrame Speed Value", Min = 1, Max = 50, Default = 2, Suffix = "", Flag = "cframe_speed_value",
     Description = "Keep low (1-5) to avoid teleport-back",
     Callback = function(v) cframeSpeed.value = v end,
-})
-
-MoveSub:AddSection("Attribute Speed")
-local attrSpeed = { enabled = false, value = 20 }
-local attrSpeedOriginal = nil
-
-MoveSub:AddToggle({
-    Name = "Attribute Speed", Default = false, Flag = "attr_speed_enabled",
-    Description = "Sets SpeedBonus attribute - works on DUELIST & similar",
-    Callback = function(v)
-        attrSpeed.enabled = v
-        local hum = GetHumanoid()
-        if hum then
-            if v then
-                attrSpeedOriginal = hum:GetAttribute("SpeedBonus") or 0
-                hum:SetAttribute("SpeedBonus", attrSpeed.value)
-            else
-                hum:SetAttribute("SpeedBonus", attrSpeedOriginal or 0)
-                attrSpeedOriginal = nil
-            end
-        end
-        Notify("Attr Speed", v and "Enabled (SpeedBonus)" or "Disabled", v and "Success" or "Error")
-    end,
-})
-MoveSub:AddSlider({
-    Name = "Attribute Speed Value", Min = 5, Max = 200, Default = 20, Suffix = "", Flag = "attr_speed_value",
-    Description = "Added to game's SpeedBonus attribute",
-    Callback = function(v)
-        attrSpeed.value = v
-        if attrSpeed.enabled then
-            local hum = GetHumanoid()
-            if hum then hum:SetAttribute("SpeedBonus", v) end
-        end
-    end,
 })
 
 MoveSub:AddSection("Gravity")
@@ -218,11 +238,6 @@ track(LocalPlayer.CharacterAdded:Connect(function(char)
     if HUB.dead then return end
     if wsEnabled then hum.WalkSpeed = wsValue end
     if jpEnabled then hum.UseJumpPower = true; hum.JumpPower = jpValue end
-    if attrSpeed.enabled then
-        task.wait(1)
-        local h = GetHumanoid()
-        if h then h:SetAttribute("SpeedBonus", attrSpeed.value) end
-    end
 end))
 
 track(UserInputService.JumpRequest:Connect(function()
