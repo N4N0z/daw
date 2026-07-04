@@ -911,7 +911,7 @@ track(RunService.RenderStepped:Connect(function()
         or esp.halo or esp.headCircle or esp.ring
     F.anyDraw = anyDraw
 
-    -- Nothing to render ΓåÆ hide once, then idle. Avoids all per-frame work
+    -- Nothing to render -> hide once, then idle. Avoids all per-frame work
     -- (viewport math, GetHRP, per-entity loop) when ESP is off or empty.
     if not (esp.enabled and (anyDraw or esp.chams)) then
         if not F.allHidden then
@@ -1107,7 +1107,7 @@ WorldSub:AddToggle({
 
 local defaultFOV = Camera.FieldOfView
 WorldSub:AddSlider({
-    Name = "Field of View", Min = 30, Max = 120, Default = math.floor(defaultFOV), Suffix = "┬░", Flag = "fov",
+    Name = "Field of View", Min = 30, Max = 120, Default = math.floor(defaultFOV), Suffix = "deg", Flag = "fov",
     Callback = function(v) Camera.FieldOfView = v end,
 })
 
@@ -1318,7 +1318,7 @@ AimSub:AddColorPicker({
     Callback = function(c) aim.fovColor = c end,
 })
 
--- ── Silent Aim (raycast method) ─────────────────────────────────────────────
+-- -- Silent Aim (raycast method) ---------------------------------------------
 -- KILLSTREAK ships an internal aim-assist module at
 -- PlayerScripts.Client.Handicap.Systems.SilentAim. The weapon fire code
 -- (WeaponAttack_FireBullet) asks SilentAim:getInstance():getPivotCFrame(camera)
@@ -1504,23 +1504,23 @@ local function applySilent()
 end
 
 if not SUPPORTED then
-    SilentSub:AddSection("Silent Aim ΓÇö Raycast")
+    SilentSub:AddSection("Silent Aim -- Raycast")
     SilentSub:AddParagraph({
         Title = "Unavailable",
         Content = "This game has no internal raycast aim module. Use the Aimbot tab instead.",
     })
 else
-    SilentSub:AddSection("Silent Aim ΓÇö Raycast")
+    SilentSub:AddSection("Silent Aim -- Raycast")
     SilentSub:AddParagraph({
         Title = "Raycast method",
-        Content = "Redirects every shot's bullet ray onto the closest enemy inside the FOV. No camera movement ΓÇö just fire and it locks. Turn on Wall Bang below to shoot through walls and lock enemies behind cover.",
+        Content = "Redirects every shot's bullet ray onto the closest enemy inside the FOV. No camera movement -- just fire and it locks. Turn on Wall Bang below to shoot through walls and lock enemies behind cover.",
     })
     SilentSub:AddToggle({
         Name = "Enabled", Default = false, Flag = "silent_enabled",
         Callback = function(v)
             silent.enabled = v
             applySilent()
-            Notify("Silent Aim", v and "Enabled ΓÇö fire to lock" or "Disabled", v and "Success" or "Error")
+            Notify("Silent Aim", v and "Enabled -- fire to lock" or "Disabled", v and "Success" or "Error")
         end,
     })
     SilentSub:AddSlider({
@@ -1546,7 +1546,7 @@ else
         Callback = function(v)
             silent.wallbang = v
             applySilent()
-            Notify("Silent Aim", v and "Wallbang ON ΓÇö shots pierce walls" or "Wallbang OFF", v and "Success" or "Error")
+            Notify("Silent Aim", v and "Wallbang ON -- shots pierce walls" or "Wallbang OFF", v and "Success" or "Error")
         end,
     })
 
@@ -1593,13 +1593,13 @@ else
     end))
 end
 
--- ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+-- ============================================================================
 -- GAME SUPPORT FRAMEWORK
 -- The universal tabs above load in every game. Each entry in SupportedGames is
 -- keyed by universe GameId; if the current game matches, its Build() runs and
 -- adds a dedicated tab with that game's features. Unsupported games simply run
 -- the universal hub. To support a new game, add another SupportedGames[id].
--- ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+-- ============================================================================
 local SupportedGames = {}
 
 -- executor signal-fire (different executors expose it under different names)
@@ -1608,7 +1608,7 @@ local fireSignal = firesignal
     or replicatesignal
 local HAS_FIRESIGNAL = type(fireSignal) == "function"
 
--- ΓöÇΓöÇΓöÇ Looksmax & Mog  (universe 10126164619) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-- --- Looksmax & Mog  (universe 10126164619) ---------------------------------
 SupportedGames[10126164619] = {
     Name = "Looksmax & Mog",
     Build = function()
@@ -1967,7 +1967,7 @@ SupportedGames[10126164619] = {
             if autoMog then solveMogBattle(pg) end   -- every mog-battle minigame
         end))
 
-        -- ΓöÇΓöÇ Auto Queue ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+        -- -- Auto Queue ------------------------------------------------------
         -- The whole matchmaking flow (MoggingController) collapses to one
         -- client->server call:
         --     F.ClientToServer.Fire("StartMogging", { Mode = "1v1"/"2v2", DeviceType })
@@ -2059,7 +2059,7 @@ SupportedGames[10126164619] = {
             end
         end))
 
-        -- ΓöÇΓöÇ Auto Gym Farm ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+        -- -- Auto Gym Farm ---------------------------------------------------
         -- A workout can ONLY be started by the machine's server-side ProximityPrompt
         -- (there is no "start workout" remote). So we walk to a FREE machine, hold its
         -- prompt (fireproximityprompt), then let the rep solver bank Perfect reps.
@@ -2218,7 +2218,7 @@ SupportedGames[10126164619] = {
         AutoClickSub:AddSection("Supported Game")
         AutoClickSub:AddParagraph({
             Title = "\u{2705} Looksmax & Mog",
-            Text = "Game detected and supported. These cheats only appear here ΓÇö other games fall back to the universal hub.",
+            Text = "Game detected and supported. These cheats only appear here -- other games fall back to the universal hub.",
         })
 
         AutoClickSub:AddSection("Auto Click")
@@ -2312,7 +2312,7 @@ SupportedGames[10126164619] = {
     end,
 }
 
--- ─── DUELIST: PvP  (universe 9461038514) ─────────────────────────────────────
+-- --- DUELIST: PvP  (universe 9461038514) -------------------------------------
 SupportedGames[9461038514] = {
     Name = "DUELIST: PvP",
     Build = function()
@@ -2320,7 +2320,7 @@ SupportedGames[9461038514] = {
         pcall(function() TpTab._hBtn.Visible = false end)
         pcall(function() ServerTab._hBtn.Visible = false end)
 
-        -- ── Force Speed (injected into Player tab) ──
+        -- -- Force Speed (injected into Player tab) --
         local SpeedSection = MoveSub:AddSection("Force Speed (DUELIST)")
         local forceSpeed = { enabled = false, value = 28 }
         local forceSpeedConn = nil
@@ -2373,7 +2373,7 @@ SupportedGames[9461038514] = {
             Callback = function(v) forceSpeed.value = v end,
         })
 
-        -- ── Hitbox Expander (injected into Combat tab) ──
+        -- -- Hitbox Expander (injected into Combat tab) --
         local HitboxSub = CombatTab:AddSubTab("Hitbox")
         local hitbox = { enabled = false, multiplier = 3, teamCheck = true }
         local hitboxOrigSizes = {}
@@ -2474,7 +2474,7 @@ do
             Notify("Game Support", "Error loading " .. entry.Name .. " features", "Error", 5)
         end
     else
-        Notify("Universal Mode", "No specific support for this game yet ΓÇö universal features only", "Info", 4)
+        Notify("Universal Mode", "No specific support for this game yet -- universal features only", "Info", 4)
     end
 end
 
@@ -2526,20 +2526,20 @@ ServerSub:AddParagraph({
 
 local SettingsTab = Window:AddTab({ Name = "Settings", Subtitle = "Config & UI", Icon = "settings" })
 
--- ── Supported Games Tab ─────────────────────────────────────────────────────
+-- -- Supported Games Tab -----------------------------------------------------
 local GamesTab = Window:AddTab({ Name = "Games", Subtitle = "Supported games", Icon = "zap" })
 local GamesSub = GamesTab:AddSubTab("Supported")
 GamesSub:AddSection("Game-Specific Support")
 GamesSub:AddButton({
     Name = "DUELIST: PvP (BETA)",
-    Description = "Force Speed, Hitbox Expander, ESP, Aimbot — auto-loads when in-game",
+    Description = "Force Speed, Hitbox Expander, ESP, Aimbot - auto-loads when in-game",
     Callback = function()
         Window:Notify({ Title = "Games", Content = "Join DUELIST to load the dedicated hub automatically.", Type = "Info", Duration = 3 })
     end,
 })
 GamesSub:AddButton({
     Name = "Looksmax & Mog Battle",
-    Description = "Auto Click, Auto Farm, Mog features — auto-loads when in-game",
+    Description = "Auto Click, Auto Farm, Mog features - auto-loads when in-game",
     Callback = function()
         Window:Notify({ Title = "Games", Content = "Join Looksmax & Mog to load features automatically.", Type = "Info", Duration = 3 })
     end,
@@ -2587,7 +2587,7 @@ end
 
 SettingsSub:AddSection("UI")
 
--- ΓöÇΓöÇ Misc: performance ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-- -- Misc: performance -------------------------------------------------------
 local MiscSub = SettingsTab:AddSubTab("Misc")
 local setFPS = setfpscap or (getgenv and getgenv().setfpscap) or set_fps_cap
 local HAS_FPS = type(setFPS) == "function"
