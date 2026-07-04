@@ -1493,7 +1493,7 @@ HitboxSub:AddToggle({
     end,
 })
 HitboxSub:AddSlider({
-    Name = "Head Size", Min = 2, Max = 5, Default = 3, Suffix = "x", Flag = "hitbox_mult",
+    Name = "Head Size", Min = 1, Max = 10, Default = 3, Suffix = "x", Flag = "hitbox_mult",
     Description = "How big enemy heads are",
     Callback = function(v)
         hitbox.multiplier = v
