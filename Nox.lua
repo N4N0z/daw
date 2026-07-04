@@ -1,4 +1,4 @@
-﻿local NOX_URL = "https://raw.githubusercontent.com/N4N0z/ddd/refs/heads/main/Nox.lua"
+local NOX_URL = "https://raw.githubusercontent.com/N4N0z/ddd/refs/heads/main/Nox.lua"
 
 local okFetch, source = pcall(game.HttpGet, game, NOX_URL)
 if not okFetch then
@@ -16,407 +16,23 @@ end
 
 local Library = chunk()
 
--- ══════════════════════════════════════════════════════════════════════════════
--- GAME-SPECIFIC: DUELIST PvP
--- ══════════════════════════════════════════════════════════════════════════════
-if game.PlaceId == 122310270867133 then
-
 do
     local prev = _G.NoxUniversal
     if prev and type(prev.Unload) == "function" then pcall(prev.Unload) end
 end
 local HUB = { conns = {}, drawings = {}, highlights = {}, dead = false }
 _G.NoxUniversal = HUB
+HUB.cleanups = {}
 local function track(conn) table.insert(HUB.conns, conn); return conn end
 local function trackDrawing(d) if d then table.insert(HUB.drawings, d) end; return d end
 
-local Players          = game:GetService("Players")
-local RunService       = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local Workspace        = game:GetService("Workspace")
-local LocalPlayer      = Players.LocalPlayer
-local Camera           = Workspace.CurrentCamera
-
-local hasDrawing = (typeof(Drawing) == "table") or (Drawing ~= nil and pcall(function() return Drawing.new end))
-local function newDrawing(class, props)
-    if not hasDrawing then return nil end
-    local ok, d = pcall(function() return Drawing.new(class) end)
-    if not ok or not d then return nil end
-    for k, v in pairs(props or {}) do pcall(function() d[k] = v end) end
-    return trackDrawing(d)
-end
-
-local function GetCharacter() return LocalPlayer.Character end
-local function GetHumanoid() local c = GetCharacter(); return c and c:FindFirstChildOfClass("Humanoid") end
-local function GetHRP() local c = GetCharacter(); return c and c:FindFirstChild("HumanoidRootPart") end
-
 local Window = Library:CreateWindow({
-    Name = "Nox Hub | DUELIST",
+    Name = "Nox Hub | Universal",
     LoadingAnimation = true,
     LoadingText = "Nox",
     LoadingDuration = 2.5,
 })
 
-local function Notify(title, content, kind, dur)
-    Window:Notify({ Title = title, Content = content, Type = kind or "Info", Duration = dur or 2.5 })
-end
-
--- ── Tab 1: Speed ─────────────────────────────────────────────────────────────
-local SpeedTab = Window:AddTab({ Name = "Speed", Subtitle = "Force Speed", Icon = "player" })
-local SpeedSub = SpeedTab:AddSubTab("Speed")
-
-local forceSpeed = { enabled = false, value = 28 }
-local forceSpeedConn = nil
-local forceSpeedOrigConn = nil
-
-local function startForceSpeed()
-    pcall(function()
-        local conns = getconnections(RunService.RenderStepped)
-        for _, c in ipairs(conns) do
-            local src = ""
-            pcall(function() src = debug.info(c.Function, "s") end)
-            if src and src:find("CharacterHandler") then
-                c:Disable()
-                forceSpeedOrigConn = c
-                break
-            end
-        end
-    end)
-    if forceSpeedConn then forceSpeedConn:Disconnect() end
-    forceSpeedConn = RunService.RenderStepped:Connect(function(dt)
-        if HUB.dead or not forceSpeed.enabled then return end
-        local hum = GetHumanoid()
-        if not hum then return end
-        if hum.MoveDirection.Magnitude > 0.01 then
-            hum.WalkSpeed = forceSpeed.value
-        else
-            hum.WalkSpeed = math.max(hum.WalkSpeed - 70 * dt, 0)
-        end
-    end)
-end
-
-local function stopForceSpeed()
-    if forceSpeedConn then forceSpeedConn:Disconnect(); forceSpeedConn = nil end
-    if forceSpeedOrigConn then
-        pcall(function() forceSpeedOrigConn:Enable() end)
-        forceSpeedOrigConn = nil
-    end
-end
-
-SpeedSub:AddSection("Force Speed")
-SpeedSub:AddToggle({
-    Name = "Enabled", Default = false, Flag = "d_speed_enabled",
-    Description = "Bypasses game speed controller (getconnections)",
-    Callback = function(v)
-        forceSpeed.enabled = v
-        if v then startForceSpeed() else stopForceSpeed() end
-        Notify("Speed", v and ("Enabled @ " .. forceSpeed.value) or "Disabled", v and "Success" or "Error")
-    end,
-})
-SpeedSub:AddSlider({
-    Name = "Speed Value", Min = 16, Max = 60, Default = 28, Suffix = "", Flag = "d_speed_value",
-    Description = "28 = safe, higher may TP-back",
-    Callback = function(v) forceSpeed.value = v end,
-})
-
--- ── Tab 2: Hitbox ────────────────────────────────────────────────────────────
-local HitboxTab = Window:AddTab({ Name = "Hitbox", Subtitle = "Head Expander", Icon = "target" })
-local HitboxSub = HitboxTab:AddSubTab("Hitbox")
-
-local hitbox = { enabled = false, multiplier = 3, teamCheck = true }
-local hitboxOrigSizes = {}
-
-local function expandPlayer(player)
-    if player == LocalPlayer then return end
-    if hitbox.teamCheck and player.Team ~= nil and LocalPlayer.Team ~= nil and player.Team == LocalPlayer.Team then return end
-    local char = player.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum or hum.Health <= 0 then return end
-    local head = char:FindFirstChild("Head")
-    if not head then return end
-    if not hitboxOrigSizes[head] then
-        local curSize = head.Size
-        if curSize.X > 2.5 or curSize.Y > 2.5 then return end
-        hitboxOrigSizes[head] = curSize
-    end
-    local target = hitboxOrigSizes[head] * hitbox.multiplier
-    if head.Size ~= target then
-        head.Massless = true
-        head.Size = target
-    end
-end
-
-local function shrinkHeads()
-    for part, orig in pairs(hitboxOrigSizes) do
-        if part and part.Parent then part.Size = orig end
-    end
-    hitboxOrigSizes = {}
-end
-
-local hitboxConn = nil
-local function startHitbox()
-    for _, p in ipairs(Players:GetPlayers()) do expandPlayer(p) end
-    if not hitboxConn then
-        hitboxConn = RunService.Heartbeat:Connect(function()
-            if HUB.dead or not hitbox.enabled then
-                if hitboxConn then hitboxConn:Disconnect(); hitboxConn = nil end
-                return
-            end
-        end)
-        track(hitboxConn)
-    end
-    task.spawn(function()
-        while hitbox.enabled and not HUB.dead do
-            for _, p in ipairs(Players:GetPlayers()) do expandPlayer(p) end
-            task.wait(2)
-        end
-    end)
-end
-
-track(Players.PlayerAdded:Connect(function(p)
-    track(p.CharacterAdded:Connect(function()
-        task.wait(1)
-        if hitbox.enabled and not HUB.dead then expandPlayer(p) end
-    end))
-    if hitbox.enabled then task.delay(1, function() expandPlayer(p) end) end
-end))
-
-HitboxSub:AddSection("Head Expander")
-HitboxSub:AddToggle({
-    Name = "Enabled", Default = false, Flag = "d_hitbox_enabled",
-    Callback = function(v)
-        hitbox.enabled = v
-        if v then startHitbox() else shrinkHeads() end
-        Notify("Hitbox", v and "Heads expanded" or "Disabled", v and "Success" or "Error")
-    end,
-})
-HitboxSub:AddSlider({
-    Name = "Head Size", Min = 1, Max = 10, Default = 3, Suffix = "x", Flag = "d_hitbox_mult",
-    Description = "Enemy head scale",
-    Callback = function(v)
-        hitbox.multiplier = v
-        if hitbox.enabled then
-            for part, orig in pairs(hitboxOrigSizes) do
-                if part and part.Parent then part.Size = orig * v end
-            end
-        end
-    end,
-})
-HitboxSub:AddToggle({
-    Name = "Team Check", Default = true, Flag = "d_hitbox_team",
-    Callback = function(v) hitbox.teamCheck = v end,
-})
-
--- ── Tab 3: Combat (ESP + Aimbot) ────────────────────────────────────────────
-local CombatTab = Window:AddTab({ Name = "Combat", Subtitle = "ESP & Aimbot", Icon = "eye" })
-local EspSub = CombatTab:AddSubTab("ESP")
-
-local espEnabled = false
-local espChams = { enabled = false, fillT = 0.55, outlineT = 0, teamCheck = true }
-local espHighlights = {}
-
-local function getEspParent()
-    local ok, parent = pcall(function() return (gethui and gethui()) or game:GetService("CoreGui") end)
-    if ok and parent then return parent end
-    return LocalPlayer:WaitForChild("PlayerGui")
-end
-
-local function refreshChams()
-    for _, hl in pairs(espHighlights) do hl:Destroy() end
-    espHighlights = {}
-    if not espChams.enabled then return end
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            if espChams.teamCheck and p.Team ~= nil and LocalPlayer.Team ~= nil and p.Team == LocalPlayer.Team then continue end
-            local char = p.Character
-            if char then
-                local hl = Instance.new("Highlight")
-                hl.Name = "NoxDuelist_" .. p.Name
-                hl.Adornee = char
-                hl.FillColor = Color3.fromRGB(255, 0, 80)
-                hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-                hl.FillTransparency = espChams.fillT
-                hl.OutlineTransparency = espChams.outlineT
-                hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                hl.Parent = getEspParent()
-                espHighlights[p] = hl
-                table.insert(HUB.highlights, hl)
-            end
-        end
-    end
-end
-
-track(Players.PlayerAdded:Connect(function(p)
-    track(p.CharacterAdded:Connect(function()
-        task.wait(1)
-        if espChams.enabled and not HUB.dead then refreshChams() end
-    end))
-end))
-track(Players.PlayerRemoving:Connect(function(p)
-    if espHighlights[p] then espHighlights[p]:Destroy(); espHighlights[p] = nil end
-end))
-
-EspSub:AddSection("ESP")
-EspSub:AddToggle({
-    Name = "Chams (Highlight)", Default = false, Flag = "d_esp_chams",
-    Callback = function(v)
-        espChams.enabled = v
-        refreshChams()
-        Notify("ESP", v and "Chams enabled" or "Chams disabled", v and "Success" or "Error")
-    end,
-})
-EspSub:AddSlider({
-    Name = "Fill Transparency", Min = 0, Max = 100, Default = 55, Suffix = "%", Flag = "d_esp_fill",
-    Callback = function(v)
-        espChams.fillT = v / 100
-        for _, hl in pairs(espHighlights) do hl.FillTransparency = v / 100 end
-    end,
-})
-EspSub:AddToggle({
-    Name = "Team Check", Default = true, Flag = "d_esp_team",
-    Callback = function(v) espChams.teamCheck = v; refreshChams() end,
-})
-
--- Aimbot for DUELIST
-local AimSub = CombatTab:AddSubTab("Aimbot")
-
-local aim = {
-    enabled = false, smoothness = 8, fov = 200, part = "Head",
-    teamCheck = true, visibleCheck = false, aliveCheck = true,
-    stickyAim = true, showFov = true,
-    fovColor = Color3.fromRGB(255, 0, 80),
-}
-local stickyTarget = nil
-local mb2Down = false
-local fovCircle = newDrawing("Circle", { Thickness = 1.5, Filled = false, Visible = false })
-
-track(UserInputService.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then mb2Down = true end
-end))
-track(UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then mb2Down = false end
-end))
-
-local function getAimPart(char)
-    if not char then return nil end
-    return char:FindFirstChild(aim.part) or char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
-end
-
-local function isAlive(char)
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    return hum ~= nil and hum.Health > 0
-end
-
-local function isVisible(char, part)
-    if not aim.visibleCheck then return true end
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = { GetCharacter() }
-    local origin = Camera.CFrame.Position
-    local result = Workspace:Raycast(origin, part.Position - origin, params)
-    if not result then return true end
-    return result.Instance:IsDescendantOf(char)
-end
-
-local function getClosestTarget()
-    local best, bestDist
-    local mouse = UserInputService:GetMouseLocation()
-    local center = Vector2.new(mouse.X, mouse.Y)
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            if aim.teamCheck and p.Team ~= nil and LocalPlayer.Team ~= nil and p.Team == LocalPlayer.Team then continue end
-            local char = p.Character
-            local part = getAimPart(char)
-            if part and isAlive(char) then
-                local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
-                if onScreen then
-                    local d = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
-                    if d <= aim.fov and (not bestDist or d < bestDist) then
-                        if isVisible(char, part) then
-                            best, bestDist = part, d
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return best
-end
-
-track(RunService.RenderStepped:Connect(function()
-    if HUB.dead then return end
-    if fovCircle then
-        fovCircle.Visible = aim.enabled and aim.showFov
-        if fovCircle.Visible then
-            local mouse = UserInputService:GetMouseLocation()
-            fovCircle.Position = Vector2.new(mouse.X, mouse.Y)
-            fovCircle.Radius = aim.fov
-            fovCircle.Color = aim.fovColor
-        end
-    end
-    if not aim.enabled or not mb2Down then stickyTarget = nil; return end
-
-    local target = nil
-    if aim.stickyAim and stickyTarget then
-        local part = getAimPart(stickyTarget.Parent)
-        local char = stickyTarget.Parent
-        if part and char and isAlive(char) then
-            local sp, on = Camera:WorldToViewportPoint(part.Position)
-            if on and isVisible(char, part) then target = part else stickyTarget = nil end
-        else stickyTarget = nil end
-    end
-    if not target then
-        target = getClosestTarget()
-        if aim.stickyAim and target then stickyTarget = target end
-    end
-    if not target then return end
-
-    local camPos = Camera.CFrame.Position
-    local goal = CFrame.new(camPos, target.Position)
-    local alpha = math.clamp(1 / math.max(aim.smoothness, 1), 0, 1)
-    Camera.CFrame = Camera.CFrame:Lerp(goal, alpha)
-end))
-
-AimSub:AddSection("Aimbot")
-AimSub:AddToggle({
-    Name = "Enabled", Default = false, Flag = "d_aim_enabled",
-    Callback = function(v)
-        aim.enabled = v
-        Notify("Aimbot", v and "Enabled (hold RMB)" or "Disabled", v and "Success" or "Error")
-    end,
-})
-AimSub:AddSlider({
-    Name = "Smoothness", Min = 1, Max = 30, Default = 8, Suffix = "", Flag = "d_aim_smooth",
-    Callback = function(v) aim.smoothness = v end,
-})
-AimSub:AddSlider({
-    Name = "FOV", Min = 50, Max = 600, Default = 200, Suffix = "px", Flag = "d_aim_fov",
-    Callback = function(v) aim.fov = v end,
-})
-AimSub:AddToggle({
-    Name = "Sticky Aim", Default = true, Flag = "d_aim_sticky",
-    Description = "Lock one target until dead/hidden",
-    Callback = function(v) aim.stickyAim = v; stickyTarget = nil end,
-})
-AimSub:AddToggle({
-    Name = "Team Check", Default = true, Flag = "d_aim_team",
-    Callback = function(v) aim.teamCheck = v end,
-})
-AimSub:AddToggle({
-    Name = "Wall Check", Default = false, Flag = "d_aim_vis",
-    Callback = function(v) aim.visibleCheck = v end,
-})
-AimSub:AddToggle({
-    Name = "Show FOV Circle", Default = true, Flag = "d_aim_showfov",
-    Callback = function(v) aim.showFov = v end,
-})
-
-return -- stop here, don't load universal hub
-end
--- ══════════════════════════════════════════════════════════════════════════════
--- UNIVERSAL HUB (all other games)
--- ══════════════════════════════════════════════════════════════════════════════
 
 local Players            = game:GetService("Players")
 local RunService         = game:GetService("RunService")
@@ -835,6 +451,8 @@ TpMiscSub:AddButton({
         end
     end,
 })
+
+
 
 local VisualsTab = Window:AddTab({ Name = "Visuals", Subtitle = "ESP & lighting", Icon = "eye" })
 
@@ -2694,6 +2312,156 @@ SupportedGames[10126164619] = {
     end,
 }
 
+-- ─── DUELIST: PvP  (universe 9461038514) ─────────────────────────────────────
+SupportedGames[9461038514] = {
+    Name = "DUELIST: PvP",
+    Build = function()
+        -- Hide Teleport and Server tabs
+        pcall(function() TpTab._hBtn.Visible = false end)
+        pcall(function() ServerTab._hBtn.Visible = false end)
+
+        -- ── Force Speed (injected into Player tab) ──
+        local SpeedSection = MoveSub:AddSection("Force Speed (DUELIST)")
+        local forceSpeed = { enabled = false, value = 28 }
+        local forceSpeedConn = nil
+        local forceSpeedOrigConn = nil
+
+        local function startForceSpeed()
+            pcall(function()
+                local conns = getconnections(RunService.RenderStepped)
+                for _, c in ipairs(conns) do
+                    local src = ""
+                    pcall(function() src = debug.info(c.Function, "s") end)
+                    if src and src:find("CharacterHandler") then
+                        c:Disable()
+                        forceSpeedOrigConn = c
+                        break
+                    end
+                end
+            end)
+            if forceSpeedConn then forceSpeedConn:Disconnect() end
+            forceSpeedConn = RunService.RenderStepped:Connect(function(dt)
+                if HUB.dead or not forceSpeed.enabled then return end
+                local hum = GetHumanoid()
+                if not hum then return end
+                if hum.MoveDirection.Magnitude > 0.01 then
+                    hum.WalkSpeed = forceSpeed.value
+                else
+                    hum.WalkSpeed = math.max(hum.WalkSpeed - 70 * dt, 0)
+                end
+            end)
+            track(forceSpeedConn)
+        end
+
+        local function stopForceSpeed()
+            if forceSpeedConn then forceSpeedConn:Disconnect(); forceSpeedConn = nil end
+            if forceSpeedOrigConn then pcall(function() forceSpeedOrigConn:Enable() end); forceSpeedOrigConn = nil end
+        end
+
+        MoveSub:AddToggle({
+            Name = "Force Speed", Default = false, Flag = "d_speed_enabled",
+            Description = "Bypasses game speed controller (getconnections)",
+            Callback = function(v)
+                forceSpeed.enabled = v
+                if v then startForceSpeed() else stopForceSpeed() end
+                Notify("Speed", v and ("Enabled @ " .. forceSpeed.value) or "Disabled", v and "Success" or "Error")
+            end,
+        })
+        MoveSub:AddSlider({
+            Name = "Force Speed Value", Min = 16, Max = 60, Default = 28, Suffix = "", Flag = "d_speed_value",
+            Description = "28 safe, higher may TP-back",
+            Callback = function(v) forceSpeed.value = v end,
+        })
+
+        -- ── Hitbox Expander (injected into Combat tab) ──
+        local HitboxSub = CombatTab:AddSubTab("Hitbox")
+        local hitbox = { enabled = false, multiplier = 3, teamCheck = true }
+        local hitboxOrigSizes = {}
+
+        local function expandPlayer(player)
+            if player == LocalPlayer then return end
+            if hitbox.teamCheck and player.Team ~= nil and LocalPlayer.Team ~= nil and player.Team == LocalPlayer.Team then return end
+            local char = player.Character
+            if not char then return end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then return end
+            local head = char:FindFirstChild("Head")
+            if not head then return end
+            if not hitboxOrigSizes[head] then
+                local curSize = head.Size
+                if curSize.X > 2.5 or curSize.Y > 2.5 then return end
+                hitboxOrigSizes[head] = curSize
+            end
+            local target = hitboxOrigSizes[head] * hitbox.multiplier
+            if head.Size ~= target then head.Massless = true; head.Size = target end
+        end
+
+        local function shrinkHeads()
+            for part, orig in pairs(hitboxOrigSizes) do
+                if part and part.Parent then part.Size = orig end
+            end
+            hitboxOrigSizes = {}
+        end
+
+        local function startHitbox()
+            for _, p in ipairs(Players:GetPlayers()) do expandPlayer(p) end
+            task.spawn(function()
+                while hitbox.enabled and not HUB.dead do
+                    for _, p in ipairs(Players:GetPlayers()) do
+                        if p == LocalPlayer then continue end
+                        local char = p.Character
+                        local hum = char and char:FindFirstChildOfClass("Humanoid")
+                        local head = char and char:FindFirstChild("Head")
+                        if head and hitboxOrigSizes[head] and (not hum or hum.Health <= 0) then
+                            head.Size = hitboxOrigSizes[head]
+                            hitboxOrigSizes[head] = nil
+                        else
+                            expandPlayer(p)
+                        end
+                    end
+                    task.wait(1)
+                end
+            end)
+        end
+
+        track(Players.PlayerAdded:Connect(function(p)
+            track(p.CharacterAdded:Connect(function()
+                task.wait(1)
+                if hitbox.enabled and not HUB.dead then expandPlayer(p) end
+            end))
+            if hitbox.enabled then task.delay(1, function() expandPlayer(p) end) end
+        end))
+
+        HitboxSub:AddSection("Head Expander")
+        HitboxSub:AddToggle({
+            Name = "Enabled", Default = false, Flag = "d_hitbox_enabled",
+            Callback = function(v)
+                hitbox.enabled = v
+                if v then startHitbox() else shrinkHeads() end
+                Notify("Hitbox", v and "Heads expanded" or "Disabled", v and "Success" or "Error")
+            end,
+        })
+        HitboxSub:AddSlider({
+            Name = "Head Size", Min = 1, Max = 10, Default = 3, Suffix = "x", Flag = "d_hitbox_mult",
+            Callback = function(v)
+                hitbox.multiplier = v
+                if hitbox.enabled then
+                    for part, orig in pairs(hitboxOrigSizes) do
+                        if part and part.Parent then part.Size = orig * v end
+                    end
+                end
+            end,
+        })
+        HitboxSub:AddToggle({ Name = "Team Check", Default = true, Flag = "d_hitbox_team", Callback = function(v) hitbox.teamCheck = v end })
+
+        -- Register cleanup so hitbox resets on hub unload/restart
+        table.insert(HUB.cleanups, function()
+            shrinkHeads()
+            stopForceSpeed()
+        end)
+    end,
+}
+
 -- Dispatch: load the current game's module if we support it.
 do
     local entry = SupportedGames[game.GameId]
@@ -2759,7 +2527,7 @@ ServerSub:AddParagraph({
 local SettingsTab = Window:AddTab({ Name = "Settings", Subtitle = "Config & UI", Icon = "settings" })
 
 -- ── Supported Games Tab ─────────────────────────────────────────────────────
-local GamesTab = Window:AddTab({ Name = "Games", Subtitle = "Supported games", Icon = "list" })
+local GamesTab = Window:AddTab({ Name = "Games", Subtitle = "Supported games", Icon = "zap" })
 local GamesSub = GamesTab:AddSubTab("Supported")
 GamesSub:AddSection("Game-Specific Support")
 GamesSub:AddButton({
@@ -2767,6 +2535,13 @@ GamesSub:AddButton({
     Description = "Force Speed, Hitbox Expander, ESP, Aimbot — auto-loads when in-game",
     Callback = function()
         Window:Notify({ Title = "Games", Content = "Join DUELIST to load the dedicated hub automatically.", Type = "Info", Duration = 3 })
+    end,
+})
+GamesSub:AddButton({
+    Name = "Looksmax & Mog Battle",
+    Description = "Auto Click, Auto Farm, Mog features — auto-loads when in-game",
+    Callback = function()
+        Window:Notify({ Title = "Games", Content = "Join Looksmax & Mog to load features automatically.", Type = "Info", Duration = 3 })
     end,
 })
 GamesSub:AddSection("Info")
@@ -2877,6 +2652,7 @@ function HUB.Unload()
     if getgenv and getgenv().NoxAim then getgenv().NoxAim.enabled = false end
     pcall(function() if flyConn then flyConn:Disconnect() end end)
     pcall(function() if noclipConn then noclipConn:Disconnect() end end)
+    for _, fn in ipairs(HUB.cleanups) do pcall(fn) end
     for _, c in ipairs(HUB.conns) do pcall(function() c:Disconnect() end) end
     for _, d in ipairs(HUB.drawings) do pcall(function() d:Remove() end) end
     for _, h in ipairs(HUB.highlights) do pcall(function() h:Destroy() end) end
