@@ -1507,17 +1507,9 @@ AimSub:AddSection("Activation")
 AimSub:AddToggle({ Name = "Hold Right-Click", Default = true, Flag = "aim_rmb", Callback = function(v) aim.useRightClick = v end })
 AimSub:AddToggle({
     Name = "Toggle Mode", Default = false, Flag = "aim_toggle",
-end
-
--- FOV circle visual for showing the area
-local hitboxFovCircle = newDrawing("Circle", { Thickness = 1.5, Filled = false, Visible = false })
-track(RunService.RenderStepped:Connect(function()
-    if HUB.dead then return end
-    if hitboxFovCircle then
-        local show = hitbox.enabled and hitbox.showHitbox and hasDrawing
-        hitboxFovCircle.Visible = show
-        if show then
-            local mouse = UserInputService:GetMouseLocation()
+    Description = "Press the key/button to lock instead of holding",
+    Callback = function(v) aim.toggleMode = v; toggleLocked = false end,
+})
             hitboxFovCircle.Position = Vector2.new(mouse.X, mouse.Y)
             hitboxFovCircle.Radius = hitbox.multiplier * 50
             hitboxFovCircle.Color = Color3.fromRGB(255, 60, 60)
