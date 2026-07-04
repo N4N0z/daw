@@ -2457,7 +2457,7 @@ SupportedGames[9461038514] = {
 
         -- -- Weapon Mods (DUELIST) --
         local WeaponSub = CombatTab:AddSubTab("Weapon Mods")
-        local wMod = { rapid = false, noRecoil = false, noSpread = false, infAmmo = false, lobbyShoot = false }
+        local wMod = { rapid = false, noRecoil = false, noSpread = false, infAmmo = false, lobbyShoot = false, tracer = "Default" }
         local wModConn = nil
 
         local function startWeaponMods()
@@ -2500,6 +2500,13 @@ SupportedGames[9461038514] = {
                     end
                 end
                 if wMod.lobbyShoot then LocalPlayer:SetAttribute("CanShoot", true) end
+                if wMod.tracer ~= "Default" then
+                    for _, tool in pairs(char:GetChildren()) do
+                        if tool:IsA("Tool") and tool:GetAttribute("Tracer") ~= wMod.tracer then
+                            tool:SetAttribute("Tracer", wMod.tracer)
+                        end
+                    end
+                end
             end)
             track(wModConn)
         end
@@ -2562,7 +2569,7 @@ SupportedGames[9461038514] = {
                 for _, tool in pairs(LocalPlayer.Backpack:GetChildren()) do
                     if tool:IsA("Tool") then tool:SetAttribute("Tracer", v) end
                 end
-                Notify("Weapon", "Tracer: " .. v, "Success")
+                wMod.tracer = v; Notify("Weapon", "Tracer: " .. v, "Success")
             end,
         })
 
