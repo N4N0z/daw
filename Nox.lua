@@ -1336,10 +1336,16 @@ local function expandPlayer(player)
     if not hum or hum.Health <= 0 then return end
     local head = char:FindFirstChild("Head")
     if not head then return end
-    if hitboxOrigSizes[head] then return end -- already expanded
-    hitboxOrigSizes[head] = head.Size
-    head.Massless = true  -- prevent physics assembly recalc = no freeze
-    head.Size = head.Size * hitbox.multiplier
+    -- Only store original size if we haven't already
+    if not hitboxOrigSizes[head] then
+        -- Make sure we're storing the REAL original (not already scaled)
+        local size = head.Size
+        -- If head seems abnormally large (>3 in any axis for a normal head ~1.2), skip storing
+        if size.X > 3 then return end
+        hitboxOrigSizes[head] = size
+    end
+    head.Massless = true
+    head.Size = hitboxOrigSizes[head] * hitbox.multiplier
 end
 
 local function startHitbox()
