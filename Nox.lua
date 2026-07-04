@@ -1346,7 +1346,7 @@ local function startHitbox()
     for _, p in ipairs(Players:GetPlayers()) do expandPlayer(p) end
 end
 
--- Also remove old overlays from previous approach
+-- Clean old overlays
 for _, p in ipairs(Players:GetPlayers()) do
     if p ~= LocalPlayer and p.Character then
         for _, desc in ipairs(p.Character:GetDescendants()) do
@@ -1355,12 +1355,37 @@ for _, p in ipairs(Players:GetPlayers()) do
     end
 end
 
+-- Re-expand on respawn (set once, not every frame)
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then
+        track(p.CharacterAdded:Connect(function()
+            task.wait(1)
+            if hitbox.enabled and not HUB.dead then expandPlayer(p) end
+        end))
+    end
+end
+track(Players.PlayerAdded:Connect(function(p)
+    if p == LocalPlayer then return end
+    track(p.CharacterAdded:Connect(function()
+        task.wait(1)
+        if hitbox.enabled and not HUB.dead then expandPlayer(p) end
+    end))
+    if hitbox.enabled then task.delay(1, function() expandPlayer(p) end) end
+end))
+track(LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(2)
+    if hitbox.enabled and not HUB.dead then
+        hitboxOrigSizes = {}
+        for _, p in ipairs(Players:GetPlayers()) do expandPlayer(p) end
+    end
+end))
+
 HitboxSub:AddSection("Hitbox Expander")
 HitboxSub:AddToggle({
     Name = "Enabled", Default = false, Flag = "hitbox_enabled",
     Callback = function(v)
         hitbox.enabled = v
-        if v then startHitbox() else shrinkHeads(); if hitboxConn then hitboxConn:Disconnect(); hitboxConn = nil end end
+        if v then startHitbox() else shrinkHeads() end
         Notify("Hitbox", v and "Head hitbox expanded" or "Disabled", v and "Success" or "Error")
     end,
 })
