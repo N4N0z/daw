@@ -1338,10 +1338,15 @@ local function expandPlayer(player)
     if not head then return end
     -- Only store original size if we haven't already
     if not hitboxOrigSizes[head] then
-        hitboxOrigSizes[head] = head.Size
+        -- If head is already at a scaled size (from a previous expand), don't re-store
+        local curSize = head.Size
+        hitboxOrigSizes[head] = curSize
     end
-    head.Massless = true
-    head.Size = hitboxOrigSizes[head] * hitbox.multiplier
+    local target = hitboxOrigSizes[head] * hitbox.multiplier
+    if head.Size ~= target then
+        head.Massless = true
+        head.Size = target
+    end
 end
 
 local function startHitbox()
