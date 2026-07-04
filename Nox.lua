@@ -1409,8 +1409,8 @@ local function expandPlayer(player)
     -- Only store original size if we haven't already
     if not hitboxOrigSizes[head] then
         local curSize = head.Size
-        -- Sanity check: if head is already huge (>3), it's already scaled - don't store
-        if curSize.X > 3 or curSize.Y > 3 then return end
+        -- Sanity check: if head is already scaled by us, don't overwrite original
+        if curSize.X > 2.5 or curSize.Y > 2.5 then return end
         hitboxOrigSizes[head] = curSize
     end
     local target = hitboxOrigSizes[head] * hitbox.multiplier
