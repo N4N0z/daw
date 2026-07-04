@@ -1121,9 +1121,11 @@ local aim = {
     useRightClick = true,
     altKey     = nil,
     toggleMode = false,
+    stickyAim  = false,
     showFov    = true,
     fovColor   = Color3.fromRGB(0, 120, 255),
 }
+local stickyTarget = nil
 
 local mb2Down, altDown, toggleLocked = false, false, false
 local function aimWanted()
@@ -1214,8 +1216,33 @@ track(RunService.RenderStepped:Connect(function()
         end
     end
 
-    if not aim.enabled or not aimWanted() then return end
-    local target = getClosestTarget()
+    if not aim.enabled or not aimWanted() then
+        stickyTarget = nil
+        return
+    end
+
+    -- Sticky aim: keep the same target while it's valid
+    local target = nil
+    if aim.stickyAim and stickyTarget then
+        local part = getAimPart(stickyTarget.Parent)
+        local char = stickyTarget.Parent
+        if part and char and isAlive(char) then
+            local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            if onScreen and isVisible(char, part) then
+                target = part
+            else
+                stickyTarget = nil
+            end
+        else
+            stickyTarget = nil
+        end
+    end
+
+    if not target then
+        target = getClosestTarget()
+        if aim.stickyAim and target then stickyTarget = target end
+    end
+
     if not target then return end
 
     local camPos = Camera.CFrame.Position
@@ -1255,6 +1282,11 @@ AimSub:AddSection("Filters")
 AimSub:AddToggle({ Name = "Team Check", Default = false, Flag = "aim_team", Callback = function(v) aim.teamCheck = v end })
 AimSub:AddToggle({ Name = "Wall Check (visible only)", Default = false, Flag = "aim_visible", Callback = function(v) aim.visibleCheck = v end })
 AimSub:AddToggle({ Name = "Alive Check", Default = true, Flag = "aim_alive", Callback = function(v) aim.aliveCheck = v end })
+AimSub:AddToggle({
+    Name = "Sticky Aim", Default = false, Flag = "aim_sticky",
+    Description = "Lock onto one target until they die or leave sight",
+    Callback = function(v) aim.stickyAim = v; stickyTarget = nil end,
+})
 
 AimSub:AddSection("Activation")
 AimSub:AddToggle({ Name = "Hold Right-Click", Default = true, Flag = "aim_rmb", Callback = function(v) aim.useRightClick = v end })
