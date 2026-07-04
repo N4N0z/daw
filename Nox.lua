@@ -1330,6 +1330,8 @@ local hitboxConn = nil
 
 local function expandPlayer(player)
     if player == LocalPlayer then return end
+    -- Team check: don't expand teammates
+    if player.Team ~= nil and LocalPlayer.Team ~= nil and player.Team == LocalPlayer.Team then return end
     local char = player.Character
     if not char then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
