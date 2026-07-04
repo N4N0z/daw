@@ -2455,7 +2455,7 @@ SupportedGames[9461038514] = {
         HitboxSub:AddToggle({ Name = "Team Check", Default = true, Flag = "d_hitbox_team", Callback = function(v) hitbox.teamCheck = v end })
 
 
-        -- â”€â”€ Cosmetics (client-side skins/tracers/killfx) â”€â”€
+        -- Ã¢â€â‚¬Ã¢â€â‚¬ Cosmetics (client-side skins/tracers/killfx) Ã¢â€â‚¬Ã¢â€â‚¬
         local CosmeticsSub = CombatTab:AddSubTab("Cosmetics")
 
         local RS_Assets = game:GetService("ReplicatedStorage").Assets
@@ -2477,23 +2477,54 @@ SupportedGames[9461038514] = {
         end
 
         local function applySkin(weapon, skinName)
-            if skinName == "Default" then return end
+            if skinName == "Default" then
+                -- Reset: remove texture override, restore original color
+                local tool = LocalPlayer.Backpack:FindFirstChild(weapon) or (GetCharacter() and GetCharacter():FindFirstChild(weapon))
+                if not tool then return end
+                local skinFolder = tool:FindFirstChild("Skin")
+                if skinFolder then
+                    for _, v in pairs(skinFolder:GetChildren()) do
+                        if v:IsA("MeshPart") then
+                            pcall(function() v.Color = Color3.new(0.4, 0.4, 0.4); v.Material = Enum.Material.SmoothPlastic; v.TextureID = "" end)
+                        end
+                    end
+                end
+                return
+            end
             local skinModel = RS_Assets.Skins:FindFirstChild(weapon) and RS_Assets.Skins[weapon]:FindFirstChild(skinName)
             if not skinModel then return end
             local tool = LocalPlayer.Backpack:FindFirstChild(weapon) or (GetCharacter() and GetCharacter():FindFirstChild(weapon))
             if not tool then return end
-            local skinParts = {}
+            -- Get reference color/material from skin
+            local refPart = nil
             for _, v in pairs(skinModel:GetDescendants()) do
-                if v:IsA("MeshPart") then skinParts[v.Name] = v end
+                if v:IsA("MeshPart") then refPart = v; break end
             end
-            for _, v in pairs(tool:GetDescendants()) do
-                if v:IsA("MeshPart") and skinParts[v.Name] then
-                    local sp = skinParts[v.Name]
+            if not refPart then return end
+            -- Apply color/material/texture to all visible parts in Skin folder
+            local skinFolder = tool:FindFirstChild("Skin")
+            local targets = skinFolder and skinFolder:GetChildren() or {}
+            for _, v in pairs(targets) do
+                if v:IsA("MeshPart") then
                     pcall(function()
-                        v.MeshId = sp.MeshId
-                        v.TextureID = sp.TextureID
-                        v.Color = sp.Color
-                        v.Material = sp.Material
+                        v.Color = refPart.Color
+                        v.Material = refPart.Material
+                        v.Reflectance = refPart.Reflectance
+                        if refPart.TextureID and refPart.TextureID ~= "" then
+                            v.TextureID = refPart.TextureID
+                        else
+                            v.TextureID = ""
+                        end
+                    end)
+                end
+            end
+            -- Also apply to base parts
+            for _, v in pairs(tool:GetChildren()) do
+                if v:IsA("MeshPart") then
+                    pcall(function()
+                        v.Color = refPart.Color
+                        v.Material = refPart.Material
+                        v.Reflectance = refPart.Reflectance
                     end)
                 end
             end
