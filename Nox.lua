@@ -161,6 +161,40 @@ MoveSub:AddSlider({
     Callback = function(v) cframeSpeed.value = v end,
 })
 
+MoveSub:AddSection("Attribute Speed")
+local attrSpeed = { enabled = false, value = 20 }
+local attrSpeedOriginal = nil
+
+MoveSub:AddToggle({
+    Name = "Attribute Speed", Default = false, Flag = "attr_speed_enabled",
+    Description = "Sets SpeedBonus attribute - works on DUELIST & similar",
+    Callback = function(v)
+        attrSpeed.enabled = v
+        local hum = GetHumanoid()
+        if hum then
+            if v then
+                attrSpeedOriginal = hum:GetAttribute("SpeedBonus") or 0
+                hum:SetAttribute("SpeedBonus", attrSpeed.value)
+            else
+                hum:SetAttribute("SpeedBonus", attrSpeedOriginal or 0)
+                attrSpeedOriginal = nil
+            end
+        end
+        Notify("Attr Speed", v and "Enabled (SpeedBonus)" or "Disabled", v and "Success" or "Error")
+    end,
+})
+MoveSub:AddSlider({
+    Name = "Attribute Speed Value", Min = 5, Max = 200, Default = 20, Suffix = "", Flag = "attr_speed_value",
+    Description = "Added to game's SpeedBonus attribute",
+    Callback = function(v)
+        attrSpeed.value = v
+        if attrSpeed.enabled then
+            local hum = GetHumanoid()
+            if hum then hum:SetAttribute("SpeedBonus", v) end
+        end
+    end,
+})
+
 MoveSub:AddSection("Gravity")
 MoveSub:AddToggle({
     Name = "Custom Gravity", Default = false, Flag = "grav_enabled",
