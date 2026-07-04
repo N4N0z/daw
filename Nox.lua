@@ -1338,11 +1338,7 @@ local function expandPlayer(player)
     if not head then return end
     -- Only store original size if we haven't already
     if not hitboxOrigSizes[head] then
-        -- Make sure we're storing the REAL original (not already scaled)
-        local size = head.Size
-        -- If head seems abnormally large (>3 in any axis for a normal head ~1.2), skip storing
-        if size.X > 3 then return end
-        hitboxOrigSizes[head] = size
+        hitboxOrigSizes[head] = head.Size
     end
     head.Massless = true
     head.Size = hitboxOrigSizes[head] * hitbox.multiplier
