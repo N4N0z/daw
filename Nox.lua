@@ -1,4 +1,4 @@
-﻿local NOX_URL = "https://raw.githubusercontent.com/N4N0z/daw/refs/heads/main/Nox.lua"
+﻿local NOX_URL = "https://raw.githubusercontent.com/N4N0z/ddd/refs/heads/main/Nox.lua"
 
 local okFetch, source = pcall(game.HttpGet, game, NOX_URL)
 if not okFetch then
