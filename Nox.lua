@@ -1313,7 +1313,7 @@ local function buildOverlays(player)
         if hitbox.headOnly and part.Name ~= "Head" then continue end
 
         local ov = Instance.new("Part")
-        ov.Name = part.Name -- same name so headshot detection works
+        ov.Name = "HitboxOv"
         ov.Size = part.Size * hitbox.multiplier
         ov.Transparency = hitbox.showHitbox and 0.7 or 1
         ov.Color = Color3.fromRGB(255, 0, 0)
@@ -1324,7 +1324,7 @@ local function buildOverlays(player)
         ov.Massless = true
         ov.Anchored = false
         ov.CFrame = part.CFrame
-        ov.Parent = char
+        ov.Parent = part  -- CHILD of the body part for correct ancestry
         table.insert(entries, { part = ov, source = part })
     end
     hitboxOverlays[player] = entries
