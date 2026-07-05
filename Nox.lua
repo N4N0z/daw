@@ -1132,6 +1132,7 @@ local aim = {
 local stickyTarget = nil
 
 local mb2Down, altDown, toggleLocked = false, false, false
+local mobileAim = false
 local function aimWanted()
     if aim.toggleMode then return toggleLocked end
     return (aim.useRightClick and mb2Down) or (aim.altKey ~= nil and altDown)
@@ -1139,7 +1140,7 @@ end
 
 track(UserInputService.InputBegan:Connect(function(input, gp)
     if HUB.dead then return end
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then mb2Down = true end
+    if input.UserInputType == Enum.UserInputType.MouseButton2 or (mobileAim and input.UserInputType == Enum.UserInputType.Touch) then mb2Down = true end
     if aim.altKey and input.KeyCode == aim.altKey then
         altDown = true
         if aim.toggleMode then toggleLocked = not toggleLocked end
@@ -1148,7 +1149,7 @@ track(UserInputService.InputBegan:Connect(function(input, gp)
     end
 end))
 track(UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then mb2Down = false end
+    if input.UserInputType == Enum.UserInputType.MouseButton2 or (mobileAim and input.UserInputType == Enum.UserInputType.Touch) then mb2Down = false end
     if aim.altKey and input.KeyCode == aim.altKey then altDown = false end
 end))
 
@@ -1294,6 +1295,7 @@ AimSub:AddToggle({
 
 AimSub:AddSection("Activation")
 AimSub:AddToggle({ Name = "Hold Right-Click", Default = true, Flag = "aim_rmb", Callback = function(v) aim.useRightClick = v end })
+AimSub:AddToggle({ Name = "Mobile Aim (Touch)", Default = false, Flag = "aim_mobile", Description = "Locks aim when tapping screen (for mobile)", Callback = function(v) mobileAim = v end })
 AimSub:AddToggle({
     Name = "Toggle Mode", Default = false, Flag = "aim_toggle",
     Description = "Press the key/button to lock instead of holding",
