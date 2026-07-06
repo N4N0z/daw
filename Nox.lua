@@ -2627,7 +2627,7 @@ SupportedGames[6035872082] = {
     Build = function()
         -- Rivals Aimbot (injected into Combat tab)
         local AimSub = CombatTab:AddSubTab("Rivals Aim")
-        local rAim = { enabled = false, smoothness = 0.5, fov = 300, part = "Head", teamCheck = false, stickyAim = true, useRMB = true, useSideMouse = false }
+        local rAim = { enabled = false, smoothness = 0.8, fov = 300, part = "Head", teamCheck = false, stickyAim = true, useRMB = true }
         local rStickyTarget = nil
         local rAimConn = nil
         local rAimKey = nil
@@ -2737,7 +2737,7 @@ SupportedGames[6035872082] = {
             end,
         })
         AimSub:AddSlider({
-            Name = "Smoothness", Min = 10, Max = 100, Default = 50, Suffix = "%", Flag = "r_aim_smooth",
+            Name = "Smoothness", Min = 10, Max = 100, Default = 80, Suffix = "%", Flag = "r_aim_smooth",
             Description = "Higher = snappier",
             Callback = function(v) rAim.smoothness = v / 100 end,
         })
@@ -2760,7 +2760,7 @@ SupportedGames[6035872082] = {
             Callback = function(k) rAimKey = k; rAimKeyDown = false end,
         })
 
-        AimSub:AddToggle({ Name = "Side Mouse Button (XButton)", Default = false, Flag = "r_aim_sidemouse", Description = "Hold XButton1 or XButton2 to aim", Callback = function(v) rAim.useSideMouse = v end })
+
 
         AimSub:AddSection("FOV Circle")
         AimSub:AddToggle({ Name = "Show FOV Circle", Default = true, Flag = "r_aim_showfov", Callback = function(v) rShowFov = v end })
