@@ -7,6 +7,10 @@ pcall(function()
     end
 end)
 
+-- Wait for game to fully load before executing
+if not game:IsLoaded() then game.Loaded:Wait() end
+task.wait(3) -- extra delay for game systems to initialize
+
 local NOX_URL = "https://raw.githubusercontent.com/N4N0z/ddd/refs/heads/main/Nox.lua"
 
 local okFetch, source = pcall(game.HttpGet, game, NOX_URL)
