@@ -2676,7 +2676,7 @@ SupportedGames[6035872082] = {
                             if rAim.teamCheck and p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then continue end
                             local part = p.Character:FindFirstChild(rAim.part) or p.Character:FindFirstChild("Head")
                             local hum = p.Character:FindFirstChildOfClass("Humanoid")
-                            if part and hum and hum.Health > 0 and (part.Position - myRoot.Position).Magnitude < 100 then
+                            if part and hum and hum.Health > 0 and (part.Position - myRoot.Position).Magnitude < 300 then
                                 local sp, on = Camera:WorldToViewportPoint(part.Position)
                                 if on and sp.Z > 0 then
                                     local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
