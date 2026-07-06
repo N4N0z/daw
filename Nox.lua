@@ -2797,7 +2797,8 @@ SupportedGames[6035872082] = {
                             local part = p.Character:FindFirstChild(rAim.part) or p.Character:FindFirstChild("Head")
                             local hum = p.Character:FindFirstChildOfClass("Humanoid")
                             if part and hum and hum.Health > 0 then
-                            if part and hum and hum.Health > 0 and (part.Position - (GetHRP() or part).Position).Magnitude < 100 then
+                            local myRoot = GetHRP()
+                            if part and hum and hum.Health > 0 and myRoot and (part.Position - myRoot.Position).Magnitude < 100 then
                                 if on and sp.Z > 0 then
                                     local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
                                     if d <= rAim.fov and d < dist then closest = part; dist = d end
