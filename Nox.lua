@@ -3004,4 +3004,10 @@ SettingsSub:AddButton({
     end,
 })
 
+-- Auto-load saved config
+if HAS_CONFIG then
+    pcall(function() Library:LoadConfig(CONFIG_NAME) end)
+    task.delay(0.5, function() ResyncAll() end)
+end
+
 Notify("Nox Hub", "Universal loaded successfully", "Success", 4)
