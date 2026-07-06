@@ -2625,11 +2625,10 @@ SupportedGames[9461038514] = {
 SupportedGames[6035872082] = {
     Name = "Rivals",
     Build = function()
-        local GameTab = Window:AddTab({ Name = "Rivals", Subtitle = "Aimbot & ESP", Icon = "target" })
-        pcall(function() GameTab._hBtn.LayoutOrder = -1 end)
+        -- Rivals Aimbot (injected into Combat tab)
 
         -- Rivals Aimbot (CameraController.Rotation method)
-        local AimSub = GameTab:AddSubTab("Aimbot")
+        local AimSub = CombatTab:AddSubTab("Rivals Aim")
         local rAim = { enabled = false, smoothness = 0.5, fov = 300, part = "Head", teamCheck = false, stickyAim = true }
         local rStickyTarget = nil
         local rAimConn = nil
