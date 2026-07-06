@@ -2626,55 +2626,39 @@ SupportedGames[6035872082] = {
     Name = "Rivals",
     Build = function()
         -- Rivals Aimbot (injected into Combat tab)
-
-        -- Rivals Aimbot (CameraController.Rotation method)
         local AimSub = CombatTab:AddSubTab("Rivals Aim")
         local rAim = { enabled = false, smoothness = 0.5, fov = 300, part = "Head", teamCheck = false, stickyAim = true, useRMB = true }
         local rStickyTarget = nil
         local rAimConn = nil
+        local rAimKey = nil
+        local rAimKeyDown = false
+
+        track(UserInputService.InputBegan:Connect(function(input, gp)
+            if gp then return end
+            if rAimKey and input.KeyCode == rAimKey then rAimKeyDown = true end
+        end))
+        track(UserInputService.InputEnded:Connect(function(input)
+            if rAimKey and input.KeyCode == rAimKey then rAimKeyDown = false end
+        end))
+
+        local function rivalsAimWanted()
+            return (rAim.useRMB and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)) or rAimKeyDown
+        end
 
         local function startRivalsAim()
             if rAimConn then return end
             local CamCtrl = require(LocalPlayer.PlayerScripts.Controllers.CameraController)
-
-            local function getTarget()
-                local closest, dist = nil, math.huge
-                local myChar = GetCharacter()
-                local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                if not myHRP then return nil end
-                local vp = Camera.ViewportSize
-                local center = Vector2.new(vp.X/2, vp.Y/2)
-                for _, p in ipairs(Players:GetPlayers()) do
-                    if p ~= LocalPlayer and p.Character then
-                        if rAim.teamCheck and p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then continue end
-                        local part = p.Character:FindFirstChild(rAim.part) or p.Character:FindFirstChild("Head")
-                        local hum = p.Character:FindFirstChildOfClass("Humanoid")
-                        if part and hum and hum.Health > 0 then
-                            local sp, on = Camera:WorldToViewportPoint(part.Position)
-                            if on and sp.Z > 0 then
-                                local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-                                if d <= rAim.fov and d < dist then closest = part; dist = d end
-                            end
-                        end
-                    end
-                end
-                return closest
-            end
-
-            local function getRotation(targetPos)
-                local origin = Camera.CFrame.Position
-                local direction = (targetPos - origin).Unit
-                local yaw = math.atan2(-direction.X, -direction.Z)
-                local pitch = math.asin(direction.Y)
-                return Vector2.new(pitch, yaw)
-            end
-
             rAimConn = RunService.Heartbeat:Connect(function()
                 if HUB.dead or not rAim.enabled then return end
-                if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
-                    rStickyTarget = nil
-                    return
-                end
+                if not rivalsAimWanted() then rStickyTarget = nil; return end
+
+                local closest, dist = nil, math.huge
+                local vp = Camera.ViewportSize
+                local center = Vector2.new(vp.X/2, vp.Y/2)
+                local myRoot = GetHRP()
+                if not myRoot then return end
+
+                -- Find target (or keep sticky)
                 local target = nil
                 if rAim.stickyAim and rStickyTarget then
                     local char = rStickyTarget.Parent
@@ -2685,14 +2669,33 @@ SupportedGames[6035872082] = {
                         rStickyTarget = nil
                     end
                 end
+
                 if not target then
-                    target = getTarget()
+                    for _, p in ipairs(Players:GetPlayers()) do
+                        if p ~= LocalPlayer and p.Character then
+                            if rAim.teamCheck and p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then continue end
+                            local part = p.Character:FindFirstChild(rAim.part) or p.Character:FindFirstChild("Head")
+                            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+                            if part and hum and hum.Health > 0 and (part.Position - myRoot.Position).Magnitude < 100 then
+                                local sp, on = Camera:WorldToViewportPoint(part.Position)
+                                if on and sp.Z > 0 then
+                                    local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                                    if d <= rAim.fov and d < dist then closest = part; dist = d end
+                                end
+                            end
+                        end
+                    end
+                    target = closest
                     if rAim.stickyAim and target then rStickyTarget = target end
                 end
+
                 if not target then return end
-                local rot = getRotation(target.Position)
-                local current = CamCtrl.Rotation
-                CamCtrl.Rotation = current:Lerp(rot, rAim.smoothness)
+                local origin = Camera.CFrame.Position
+                local direction = (target.Position - origin).Unit
+                local yaw = math.atan2(-direction.X, -direction.Z)
+                local pitch = math.asin(direction.Y)
+                local rot = Vector2.new(pitch, yaw)
+                CamCtrl.Rotation = CamCtrl.Rotation:Lerp(rot, rAim.smoothness)
             end)
             track(rAimConn)
         end
@@ -2701,13 +2704,36 @@ SupportedGames[6035872082] = {
             if rAimConn then rAimConn:Disconnect(); rAimConn = nil end
         end
 
+        -- FOV Circle
+        local rFovCircle = nil
+        local rShowFov = true
+        pcall(function()
+            if typeof(Drawing) == "table" or Drawing ~= nil then
+                rFovCircle = Drawing.new("Circle")
+                rFovCircle.Thickness = 1.5; rFovCircle.Filled = false; rFovCircle.Visible = false
+                rFovCircle.Color = Color3.fromRGB(0, 120, 255)
+                table.insert(HUB.drawings, rFovCircle)
+            end
+        end)
+        track(RunService.RenderStepped:Connect(function()
+            if rFovCircle then
+                rFovCircle.Visible = rAim.enabled and rShowFov
+                if rFovCircle.Visible then
+                    local mouse = UserInputService:GetMouseLocation()
+                    rFovCircle.Position = Vector2.new(mouse.X, mouse.Y)
+                    rFovCircle.Radius = rAim.fov
+                end
+            end
+        end))
+
+        -- UI
         AimSub:AddSection("Aimbot")
         AimSub:AddToggle({
             Name = "Enabled", Default = false, Flag = "r_aim_enabled",
             Callback = function(v)
                 rAim.enabled = v
                 if v then startRivalsAim() else stopRivalsAim() end
-                Notify("Rivals", v and "Aimbot ON (hold RMB)" or "Aimbot OFF", v and "Success" or "Info")
+                Notify("Rivals", v and "Aimbot ON (hold RMB or key)" or "Aimbot OFF", v and "Success" or "Info")
             end,
         })
         AimSub:AddSlider({
@@ -2724,130 +2750,19 @@ SupportedGames[6035872082] = {
             Default = "Head", MaxVisible = 3, Flag = "r_aim_part",
             Callback = function(v) rAim.part = v end,
         })
-        AimSub:AddToggle({
-            Name = "Sticky Aim", Default = true, Flag = "r_aim_sticky",
-            Callback = function(v) rAim.stickyAim = v; rStickyTarget = nil end,
-        })
-        AimSub:AddToggle({
-            Name = "Team Check", Default = false, Flag = "r_aim_team",
-            Callback = function(v) rAim.teamCheck = v end,
-        })
-
-        -- FOV Circle
-        local rFovCircle = nil
-        pcall(function()
-            if typeof(Drawing) == "table" or Drawing ~= nil then
-                rFovCircle = Drawing.new("Circle")
-                rFovCircle.Thickness = 1.5
-                rFovCircle.Filled = false
-                rFovCircle.Visible = false
-                rFovCircle.Color = Color3.fromRGB(0, 120, 255)
-                table.insert(HUB.drawings, rFovCircle)
-            end
-        end)
-
-        local rShowFov = true
-        track(RunService.RenderStepped:Connect(function()
-            if rFovCircle then
-                rFovCircle.Visible = rAim.enabled and rShowFov
-                if rFovCircle.Visible then
-                    local mouse = UserInputService:GetMouseLocation()
-                    rFovCircle.Position = Vector2.new(mouse.X, mouse.Y)
-                    rFovCircle.Radius = rAim.fov
-                end
-            end
-        end))
+        AimSub:AddToggle({ Name = "Sticky Aim", Default = true, Flag = "r_aim_sticky", Callback = function(v) rAim.stickyAim = v; rStickyTarget = nil end })
+        AimSub:AddToggle({ Name = "Team Check", Default = false, Flag = "r_aim_team", Callback = function(v) rAim.teamCheck = v end })
 
         AimSub:AddSection("Activation")
-        local rAimKey = nil
-        local rAimKeyDown = false
-        track(UserInputService.InputBegan:Connect(function(input, gp)
-            if gp then return end
-            if rAimKey and input.KeyCode == rAimKey then rAimKeyDown = true end
-        end))
-        track(UserInputService.InputEnded:Connect(function(input)
-            if rAimKey and input.KeyCode == rAimKey then rAimKeyDown = false end
-        end))
-
-        -- Patch the aim loop to also check alt key
-        local origConn = rAimConn
-        if rAimConn then rAimConn:Disconnect() end
-        rAimConn = nil
-
-        local function rivalsAimWanted()
-            return (rAim.useRMB and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)) or rAimKeyDown
-        end
-
-        local function startRivalsAimV2()
-            if rAimConn then return end
-            local CamCtrl = require(LocalPlayer.PlayerScripts.Controllers.CameraController)
-            rAimConn = RunService.Heartbeat:Connect(function()
-                if HUB.dead or not rAim.enabled then return end
-                if not rivalsAimWanted() then rStickyTarget = nil; return end
-                local function getTarget2()
-                    local closest, dist = nil, math.huge
-                    local myChar = GetCharacter()
-                    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                    if not myHRP then return nil end
-                    local vp = Camera.ViewportSize
-                    local center = Vector2.new(vp.X/2, vp.Y/2)
-                    for _, p in ipairs(Players:GetPlayers()) do
-                        if p ~= LocalPlayer and p.Character then
-                            if rAim.teamCheck and p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then continue end
-                            local part = p.Character:FindFirstChild(rAim.part) or p.Character:FindFirstChild("Head")
-                            local hum = p.Character:FindFirstChildOfClass("Humanoid")
-                            local myRoot = GetHRP()
-                            if part and hum and hum.Health > 0 and myRoot and (part.Position - myRoot.Position).Magnitude < 100 then
-                                local sp, on = Camera:WorldToViewportPoint(part.Position)
-                                if on and sp.Z > 0 then
-                                    local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-                                    if d <= rAim.fov and d < dist then closest = part; dist = d end
-                                end
-                            end
-                        end
-                    end
-                    return closest
-                end
-                local target = nil
-                if rAim.stickyAim and rStickyTarget then
-                    local char = rStickyTarget.Parent
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    if char and hum and hum.Health > 0 then target = rStickyTarget else rStickyTarget = nil end
-                end
-                if not target then
-                    target = getTarget2()
-                    if rAim.stickyAim and target then rStickyTarget = target end
-                end
-                if not target then return end
-                local origin = Camera.CFrame.Position
-                local direction = (target.Position - origin).Unit
-                local yaw = math.atan2(-direction.X, -direction.Z)
-                local pitch = math.asin(direction.Y)
-                local rot = Vector2.new(pitch, yaw)
-                CamCtrl.Rotation = CamCtrl.Rotation:Lerp(rot, rAim.smoothness)
-            end)
-            track(rAimConn)
-        end
-
-        -- Override start/stop to use V2
-        startRivalsAim = startRivalsAimV2
-        if rAim.enabled then startRivalsAimV2() end
-
+        AimSub:AddToggle({ Name = "Hold Right-Click", Default = true, Flag = "r_aim_rmb", Callback = function(v) rAim.useRMB = v end })
         AimSub:AddKeybind({
             Name = "Alt Aim Key (Hold)", Default = nil, Flag = "r_aim_altkey",
             Callback = function(k) rAimKey = k; rAimKeyDown = false end,
         })
 
         AimSub:AddSection("FOV Circle")
-        AimSub:AddToggle({
-            Name = "Show FOV Circle", Default = true, Flag = "r_aim_showfov",
-            Callback = function(v) rShowFov = v end,
-        })
-        AimSub:AddColorPicker({
-            Name = "FOV Color", Default = Color3.fromRGB(0, 120, 255), Flag = "r_aim_fovcolor",
-            Callback = function(c) if rFovCircle then rFovCircle.Color = c end end,
-        })
-
+        AimSub:AddToggle({ Name = "Show FOV Circle", Default = true, Flag = "r_aim_showfov", Callback = function(v) rShowFov = v end })
+        AimSub:AddColorPicker({ Name = "FOV Color", Default = Color3.fromRGB(0, 120, 255), Flag = "r_aim_fovcolor", Callback = function(c) if rFovCircle then rFovCircle.Color = c end end })
     end,
 }
 
