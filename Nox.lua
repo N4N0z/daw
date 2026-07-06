@@ -2629,7 +2629,7 @@ SupportedGames[6035872082] = {
 
         -- Rivals Aimbot (CameraController.Rotation method)
         local AimSub = CombatTab:AddSubTab("Rivals Aim")
-        local rAim = { enabled = false, smoothness = 0.5, fov = 300, part = "Head", teamCheck = false, stickyAim = true }
+        local rAim = { enabled = false, smoothness = 0.5, fov = 300, part = "Head", teamCheck = false, stickyAim = true, useRMB = true }
         local rStickyTarget = nil
         local rAimConn = nil
 
@@ -2775,7 +2775,7 @@ SupportedGames[6035872082] = {
         rAimConn = nil
 
         local function rivalsAimWanted()
-            return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) or rAimKeyDown
+            return (rAim.useRMB and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)) or rAimKeyDown
         end
 
         local function startRivalsAimV2()
