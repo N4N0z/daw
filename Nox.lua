@@ -3079,3 +3079,5 @@ SettingsSub:AddButton({
 })
 
 Notify("Nox Hub", "Universal loaded successfully", "Success", 4)
+
+-- v2.1
