@@ -1,3 +1,12 @@
+-- Auto re-execute on teleport (server change)
+pcall(function()
+    if queue_on_teleport then
+        queue_on_teleport('loadstring(game:HttpGet("https://api.jnkie.com/api/v1/luascripts/public/448f21e9d16d0fbab25d12ebb7e1093084e1c61ea6d0084527d988c76a17d64f/download"))()') 
+    elseif syn and syn.queue_on_teleport then
+        syn.queue_on_teleport('loadstring(game:HttpGet("https://api.jnkie.com/api/v1/luascripts/public/448f21e9d16d0fbab25d12ebb7e1093084e1c61ea6d0084527d988c76a17d64f/download"))()') 
+    end
+end)
+
 local NOX_URL = "https://raw.githubusercontent.com/N4N0z/ddd/refs/heads/main/Nox.lua"
 
 local okFetch, source = pcall(game.HttpGet, game, NOX_URL)
