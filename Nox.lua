@@ -2627,7 +2627,7 @@ SupportedGames[6035872082] = {
     Build = function()
         -- Rivals Aimbot (injected into Combat tab)
         local AimSub = CombatTab:AddSubTab("Rivals Aim")
-        local rAim = { enabled = false, smoothness = 0.8, fov = 300, part = "Head", teamCheck = false, stickyAim = true, useRMB = true }
+        local rAim = { enabled = false, smoothness = 1, fov = 300, part = "Head", teamCheck = false, stickyAim = true, useRMB = true }
         local rStickyTarget = nil
         local rAimConn = nil
         local rAimKey = nil
@@ -2737,7 +2737,7 @@ SupportedGames[6035872082] = {
             end,
         })
         AimSub:AddSlider({
-            Name = "Smoothness", Min = 10, Max = 100, Default = 80, Suffix = "%", Flag = "r_aim_smooth",
+            Name = "Smoothness", Min = 0, Max = 100, Default = 100, Suffix = "%", Flag = "r_aim_smooth",
             Description = "Higher = snappier",
             Callback = function(v) rAim.smoothness = v / 100 end,
         })
