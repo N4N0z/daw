@@ -2733,6 +2733,52 @@ SupportedGames[6035872082] = {
             Name = "Team Check", Default = false, Flag = "r_aim_team",
             Callback = function(v) rAim.teamCheck = v end,
         })
+
+        -- FOV Circle
+        local rFovCircle = nil
+        pcall(function()
+            if typeof(Drawing) == "table" or Drawing ~= nil then
+                rFovCircle = Drawing.new("Circle")
+                rFovCircle.Thickness = 1.5
+                rFovCircle.Filled = false
+                rFovCircle.Visible = false
+                rFovCircle.Color = Color3.fromRGB(0, 120, 255)
+                table.insert(HUB.drawings, rFovCircle)
+            end
+        end)
+
+        local rShowFov = true
+        track(RunService.RenderStepped:Connect(function()
+            if rFovCircle then
+                rFovCircle.Visible = rAim.enabled and rShowFov
+                if rFovCircle.Visible then
+                    local mouse = UserInputService:GetMouseLocation()
+                    rFovCircle.Position = Vector2.new(mouse.X, mouse.Y)
+                    rFovCircle.Radius = rAim.fov
+                end
+            end
+        end))
+
+        AimSub:AddSection("Activation")
+        AimSub:AddKeybind({
+            Name = "Aim Key", Default = nil, Flag = "r_aim_key",
+            Callback = function(k) end,
+            OnPress = function()
+                rAim.enabled = not rAim.enabled
+                if rAim.enabled then startRivalsAim() else stopRivalsAim() end
+                Notify("Rivals", rAim.enabled and "Aimbot ON" or "Aimbot OFF", rAim.enabled and "Success" or "Info")
+            end,
+        })
+        AimSub:AddSection("FOV Circle")
+        AimSub:AddToggle({
+            Name = "Show FOV Circle", Default = true, Flag = "r_aim_showfov",
+            Callback = function(v) rShowFov = v end,
+        })
+        AimSub:AddColorPicker({
+            Name = "FOV Color", Default = Color3.fromRGB(0, 120, 255), Flag = "r_aim_fovcolor",
+            Callback = function(c) if rFovCircle then rFovCircle.Color = c end end,
+        })
+
     end,
 }
 
