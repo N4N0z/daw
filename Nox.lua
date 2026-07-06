@@ -2621,6 +2621,121 @@ SupportedGames[9461038514] = {
     end,
 }
 
+-- --- Rivals (universe 6035872082) -----------------------------------------
+SupportedGames[6035872082] = {
+    Name = "Rivals",
+    Build = function()
+        local GameTab = Window:AddTab({ Name = "Rivals", Subtitle = "Aimbot & ESP", Icon = "target" })
+        pcall(function() GameTab._hBtn.LayoutOrder = -1 end)
+
+        -- Rivals Aimbot (CameraController.Rotation method)
+        local AimSub = GameTab:AddSubTab("Aimbot")
+        local rAim = { enabled = false, smoothness = 0.5, fov = 300, part = "Head", teamCheck = false, stickyAim = true }
+        local rStickyTarget = nil
+        local rAimConn = nil
+
+        local function startRivalsAim()
+            if rAimConn then return end
+            local CamCtrl = require(LocalPlayer.PlayerScripts.Controllers.CameraController)
+
+            local function getTarget()
+                local closest, dist = nil, math.huge
+                local myChar = GetCharacter()
+                local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myHRP then return nil end
+                local vp = Camera.ViewportSize
+                local center = Vector2.new(vp.X/2, vp.Y/2)
+                for _, p in ipairs(Players:GetPlayers()) do
+                    if p ~= LocalPlayer and p.Character then
+                        if rAim.teamCheck and p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then continue end
+                        local part = p.Character:FindFirstChild(rAim.part) or p.Character:FindFirstChild("Head")
+                        local hum = p.Character:FindFirstChildOfClass("Humanoid")
+                        if part and hum and hum.Health > 0 then
+                            local sp, on = Camera:WorldToViewportPoint(part.Position)
+                            if on and sp.Z > 0 then
+                                local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                                if d <= rAim.fov and d < dist then closest = part; dist = d end
+                            end
+                        end
+                    end
+                end
+                return closest
+            end
+
+            local function getRotation(targetPos)
+                local origin = Camera.CFrame.Position
+                local direction = (targetPos - origin).Unit
+                local yaw = math.atan2(-direction.X, -direction.Z)
+                local pitch = math.asin(direction.Y)
+                return Vector2.new(pitch, yaw)
+            end
+
+            rAimConn = RunService.Heartbeat:Connect(function()
+                if HUB.dead or not rAim.enabled then return end
+                if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+                    rStickyTarget = nil
+                    return
+                end
+                local target = nil
+                if rAim.stickyAim and rStickyTarget then
+                    local char = rStickyTarget.Parent
+                    local hum = char and char:FindFirstChildOfClass("Humanoid")
+                    if char and hum and hum.Health > 0 then
+                        target = rStickyTarget
+                    else
+                        rStickyTarget = nil
+                    end
+                end
+                if not target then
+                    target = getTarget()
+                    if rAim.stickyAim and target then rStickyTarget = target end
+                end
+                if not target then return end
+                local rot = getRotation(target.Position)
+                local current = CamCtrl.Rotation
+                CamCtrl.Rotation = current:Lerp(rot, rAim.smoothness)
+            end)
+            track(rAimConn)
+        end
+
+        local function stopRivalsAim()
+            if rAimConn then rAimConn:Disconnect(); rAimConn = nil end
+        end
+
+        AimSub:AddSection("Aimbot")
+        AimSub:AddToggle({
+            Name = "Enabled", Default = false, Flag = "r_aim_enabled",
+            Callback = function(v)
+                rAim.enabled = v
+                if v then startRivalsAim() else stopRivalsAim() end
+                Notify("Rivals", v and "Aimbot ON (hold RMB)" or "Aimbot OFF", v and "Success" or "Info")
+            end,
+        })
+        AimSub:AddSlider({
+            Name = "Smoothness", Min = 10, Max = 100, Default = 50, Suffix = "%", Flag = "r_aim_smooth",
+            Description = "Higher = snappier",
+            Callback = function(v) rAim.smoothness = v / 100 end,
+        })
+        AimSub:AddSlider({
+            Name = "FOV", Min = 50, Max = 800, Default = 300, Suffix = "px", Flag = "r_aim_fov",
+            Callback = function(v) rAim.fov = v end,
+        })
+        AimSub:AddDropdown({
+            Name = "Target Part", Options = { "Head", "UpperTorso", "HumanoidRootPart" },
+            Default = "Head", MaxVisible = 3, Flag = "r_aim_part",
+            Callback = function(v) rAim.part = v end,
+        })
+        AimSub:AddToggle({
+            Name = "Sticky Aim", Default = true, Flag = "r_aim_sticky",
+            Callback = function(v) rAim.stickyAim = v; rStickyTarget = nil end,
+        })
+        AimSub:AddToggle({
+            Name = "Team Check", Default = false, Flag = "r_aim_team",
+            Callback = function(v) rAim.teamCheck = v end,
+        })
+    end,
+}
+
 -- Dispatch: load the current game's module if we support it.
 do
     local entry = SupportedGames[game.GameId]
@@ -2701,6 +2816,13 @@ GamesSub:AddButton({
     Description = "Auto Click, Auto Farm, Mog features - auto-loads when in-game",
     Callback = function()
         Window:Notify({ Title = "Games", Content = "Join Looksmax & Mog to load features automatically.", Type = "Info", Duration = 3 })
+    end,
+})
+GamesSub:AddButton({
+    Name = "Rivals",
+    Description = "Aimbot (CameraController hook) + ESP",
+    Callback = function()
+        Window:Notify({ Title = "Games", Content = "Join Rivals to load features automatically.", Type = "Info", Duration = 3 })
     end,
 })
 GamesSub:AddSection("Info")
