@@ -13,13 +13,17 @@ task.wait(3) -- extra delay for game systems to initialize
 
 local NOX_URL = "https://raw.githubusercontent.com/N4N0z/ddd/main/Nox.lua"
 
-local okFetch, source = pcall(game.HttpGet, game, NOX_URL)
-if not okFetch then
-    error("[Nox Hub] Failed to download the UI library: " .. tostring(source), 0)
+local source
+for _noxAttempt = 1, 5 do
+    local okFetch, result = pcall(game.HttpGet, game, NOX_URL)
+    if okFetch and type(result) == "string" and #result > 10000 then
+        source = result
+        break
+    end
+    if _noxAttempt < 5 then task.wait(2) end
 end
-if type(source) ~= "string" or #source < 10000 then
-    error(("[Nox Hub] The hosted Nox.lua looks incomplete (%d bytes). Re-upload the full library to GitHub.")
-        :format(type(source) == "string" and #source or -1), 0)
+if not source then
+    error("[Nox Hub] Failed to download UI library after 5 attempts.", 0)
 end
 
 local chunk, compileErr = loadstring(source)
