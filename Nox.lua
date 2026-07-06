@@ -2739,7 +2739,7 @@ SupportedGames[6035872082] = {
         AimSub:AddSlider({
             Name = "Smoothness", Min = 0, Max = 100, Default = 100, Suffix = "%", Flag = "r_aim_smooth",
             Description = "Higher = snappier",
-            Callback = function(v) rAim.smoothness = v / 100 end,
+            Callback = function(v) rAim.smoothness = (100 - v) / 100 end,
         })
         AimSub:AddSlider({
             Name = "FOV", Min = 50, Max = 800, Default = 300, Suffix = "px", Flag = "r_aim_fov",
