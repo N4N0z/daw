@@ -290,6 +290,59 @@ if not _G.NoxUniversalAntiAFK then
     end)
 end
 
+CharSub:AddSection("Name Spoof")
+local nameHidden = false
+local customName = "NoxHub"
+local function updateName()
+    local char = GetCharacter()
+    if not char then return end
+    local head = char:FindFirstChild("Head")
+    if not head then return end
+    -- Hide/change overhead BillboardGui name
+    for _, v in pairs(char:GetDescendants()) do
+        if v:IsA("TextLabel") and v.Parent:IsA("BillboardGui") then
+            if nameHidden then
+                v.Text = ""
+            elseif customName ~= "" then
+                v.Text = customName
+            end
+        end
+    end
+    -- Also try Humanoid DisplayName
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        if nameHidden then
+            hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+        elseif customName ~= "" then
+            hum.DisplayName = customName
+            hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.Viewer
+        end
+    end
+end
+CharSub:AddToggle({
+    Name = "Hide Name", Default = false, Flag = "hide_name",
+    Description = "Hides your overhead name (client-side)",
+    Callback = function(v)
+        nameHidden = v
+        updateName()
+    end,
+})
+CharSub:AddInput({
+    Name = "Custom Name", Placeholder = "NoxHub", Default = "NoxHub", Flag = "custom_name",
+    Callback = function(text)
+        customName = text
+        if not nameHidden then updateName() end
+    end,
+})
+CharSub:AddButton({
+    Name = "Apply Name",
+    Callback = function()
+        updateName()
+        Notify("Name", nameHidden and "Name hidden" or ("Name set to: " .. customName), "Success")
+    end,
+})
+
+
 local TpTab = Window:AddTab({ Name = "Teleport", Subtitle = "Players & waypoints", Icon = "teleport" })
 
 local PlayerTpSub = TpTab:AddSubTab("Players")
