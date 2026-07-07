@@ -308,6 +308,18 @@ local function updateName()
             end
         end
     end
+    -- Also check __NameTag style (DUELIST/Aladia)
+    local head2 = char:FindFirstChild("Head")
+    if head2 then
+        local nameTag = head2:FindFirstChild("__NameTag")
+        if nameTag then
+            for _, v in pairs(nameTag:GetDescendants()) do
+                if v:IsA("TextLabel") and v.Parent.Name == "Name" then
+                    v.Text = nameHidden and "" or customName
+                end
+            end
+        end
+    end
     -- Also try Humanoid DisplayName
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum then
