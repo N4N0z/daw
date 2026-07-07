@@ -354,6 +354,30 @@ CharSub:AddButton({
     end,
 })
 
+CharSub:AddToggle({
+    Name = "Hide Sidebar Profile", Default = false, Flag = "hide_sidebar",
+    Description = "Shows Nox User instead of your username in the hub UI",
+    Callback = function(v)
+        pcall(function()
+            local gui = Window._screenGui or Window.ScreenGui
+            if not gui then return end
+            for _, lbl in pairs(gui:GetDescendants()) do
+                if lbl:IsA("TextLabel") then
+                    if lbl.Text == LocalPlayer.DisplayName or lbl.Text == ("@" .. LocalPlayer.Name) then
+                        if v then
+                            if lbl.Text == LocalPlayer.DisplayName then lbl.Text = "Nox User" end
+                            if lbl.Text == ("@" .. LocalPlayer.Name) then lbl.Text = "@noxhub" end
+                        else
+                            if lbl.Text == "Nox User" then lbl.Text = LocalPlayer.DisplayName end
+                            if lbl.Text == "@noxhub" then lbl.Text = "@" .. LocalPlayer.Name end
+                        end
+                    end
+                end
+            end
+        end)
+    end,
+})
+
 
 local TpTab = Window:AddTab({ Name = "Teleport", Subtitle = "Players & waypoints", Icon = "teleport" })
 
